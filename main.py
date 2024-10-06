@@ -32,9 +32,12 @@ CSS = """
 }
 .stDataFrame {
     font-size: 14px;
+    width: 100%;
+    overflow-x: auto;
 }
 .stDataFrame td {
     background-color: #2D2D2D;
+    color: white;
 }
 .stDataFrame tr:nth-child(even) {
     background-color: #353535;
@@ -172,12 +175,14 @@ def main():
         for i in range(100):
             status_text.text(get_random_quote())
             progress_bar.progress(i + 1)
-            time.sleep(0.1)
+            time.sleep(0.01)  # Shortened time for better UX
 
         try:
             csv_content = generate_questions(params, api_key)
-            
             df = process_csv_content(csv_content)
+            
+            # Save generated DataFrame to session state
+            st.session_state.generated_df = df
             
             # Display the DataFrame with horizontal scrolling
             st.markdown(
@@ -193,13 +198,16 @@ def main():
             )
             st.dataframe(df)
             
-            csv = df.to_csv(index=False)
-            st.download_button(
-                label="Download CSV",
-                data=csv,
-                file_name="generated_questions.csv",
-                mime="text/csv",
-            )
+            # Create CSV from DataFrame and provide download button
+            if 'generated_df' in st.session_state:
+                csv = st.session_state.generated_df.to_csv(index=False)
+                st.download_button(
+                    label="Download CSV",
+                    data=csv,
+                    file_name="generated_questions.csv",
+                    mime="text/csv",
+                )
+                
         except Exception as e:
             st.error(f"An error occurred: {str(e)}")
         finally:
