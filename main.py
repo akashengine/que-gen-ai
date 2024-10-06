@@ -7,9 +7,6 @@ from subject_data import SUBJECTS, TOPICS, SUB_TOPICS, PDF_NAMES
 
 # Constants
 ASSISTANT_ID = "asst_1cp5iEnWInbKxO05X1fEVKFC"
-OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
-
-client = OpenAI(api_key=OPENAI_API_KEY)
 
 # UPSC-related quotes
 QUOTES = [
@@ -41,9 +38,11 @@ def process_assistant_response(response):
     df = pd.read_csv(io.StringIO(response))
     return df
 
-def generate_questions(params):
+def generate_questions(params, api_key):
     subject, topic, sub_topic, question_type, num_questions, difficulty, language, question_source = params
     
+    client = OpenAI(api_key=api_key)
+
     # Create a new thread
     thread = client.beta.threads.create()
 
@@ -80,24 +79,41 @@ def main():
     st.set_page_config(page_title="UPSC Question Generator", page_icon="📚", layout="wide")
     st.title("UPSC Question Generator")
 
+    # API Key input
+    if "openai_api_key" not in st.session_state:
+        st.session_state.openai_api_key = ""
+
+    st.session_state.openai_api_key = st.text_input("Enter your OpenAI API Key:", value=st.session_state.openai_api_key, type="password")
+    api_key = st.session_state.openai_api_key
+
+    if not api_key:
+        st.warning("Please enter your OpenAI API key to proceed.")
+        st.stop()
+
     # Sidebar for input parameters
     params = create_sidebar()
 
     # Main content area
     if st.sidebar.button("Generate Questions"):
-        with st.spinner("Generating questions... " + get_random_quote()):
-            csv_content = generate_questions(params)
-            
-            df = process_assistant_response(csv_content)
-            st.dataframe(df)
-            
-            csv = df.to_csv(index=False)
-            st.download_button(
-                label="Download CSV",
-                data=csv,
-                file_name="generated_questions.csv",
-                mime="text/csv",
-            )
+        if api_key:
+            with st.spinner("Generating questions... " + get_random_quote()):
+                try:
+                    csv_content = generate_questions(params, api_key)
+                    
+                    df = process_assistant_response(csv_content)
+                    st.dataframe(df)
+                    
+                    csv = df.to_csv(index=False)
+                    st.download_button(
+                        label="Download CSV",
+                        data=csv,
+                        file_name="generated_questions.csv",
+                        mime="text/csv",
+                    )
+                except Exception as e:
+                    st.error(f"An error occurred: {str(e)}")
+        else:
+            st.warning("Please enter your OpenAI API key to generate questions.")
 
 if __name__ == "__main__":
     main()
