@@ -1,9 +1,9 @@
 import streamlit as st
-from openai import OpenAI
 import pandas as pd
 import io
 import random
 from subject_data import SUBJECTS, TOPICS, SUB_TOPICS, PDF_NAMES
+from openai import OpenAI
 
 # Constants
 ASSISTANT_ID = "asst_1cp5iEnWInbKxO05X1fEVKFC"
@@ -20,11 +20,19 @@ QUOTES = [
 def get_random_quote():
     return random.choice(QUOTES)
 
+def validate_api_key(api_key):
+    try:
+        client = OpenAI(api_key=api_key)
+        client.models.list()  # This will raise an error if the API key is invalid
+        return True
+    except Exception as e:
+        return False
+
 def create_sidebar():
     st.sidebar.title("Question Generator")
     subject = st.sidebar.selectbox("Subject", SUBJECTS)
     topic = st.sidebar.selectbox("Topic", TOPICS.get(subject, []))
-    sub_topic = st.sidebar.selectbox("Sub-Topic", SUB_TOPICS.get(topic, []))
+    sub_topic = st.sidebar.selectbox("Sub-Topic", SUB_TOPICS.get(topic, ["General"]))
     question_type = st.sidebar.selectbox("Question Type", ["MCQ", "Fill in the Blanks", "Short Answer", "Descriptive/Essay", "Match the Following", "True/False"])
     num_questions = st.sidebar.number_input("Number of Questions", min_value=1, max_value=50, value=5)
     difficulty = st.sidebar.selectbox("Difficulty Level", ["Easy", "Medium", "Hard"])
@@ -80,14 +88,18 @@ def main():
     st.title("UPSC Question Generator")
 
     # API Key input
-    if "openai_api_key" not in st.session_state:
-        st.session_state.openai_api_key = ""
+    if "api_key" not in st.session_state:
+        st.session_state.api_key = ""
 
-    st.session_state.openai_api_key = st.text_input("Enter your OpenAI API Key:", value=st.session_state.openai_api_key, type="password")
-    api_key = st.session_state.openai_api_key
+    api_key = st.text_input("Enter your API Key:", value=st.session_state.api_key, type="password")
+    st.session_state.api_key = api_key
 
     if not api_key:
-        st.warning("Please enter your OpenAI API key to proceed.")
+        st.warning("Please enter your API key to proceed.")
+        st.stop()
+
+    if not validate_api_key(api_key):
+        st.error("Invalid API key. Please enter a valid API key.")
         st.stop()
 
     # Sidebar for input parameters
@@ -95,25 +107,22 @@ def main():
 
     # Main content area
     if st.sidebar.button("Generate Questions"):
-        if api_key:
-            with st.spinner("Generating questions... " + get_random_quote()):
-                try:
-                    csv_content = generate_questions(params, api_key)
-                    
-                    df = process_assistant_response(csv_content)
-                    st.dataframe(df)
-                    
-                    csv = df.to_csv(index=False)
-                    st.download_button(
-                        label="Download CSV",
-                        data=csv,
-                        file_name="generated_questions.csv",
-                        mime="text/csv",
-                    )
-                except Exception as e:
-                    st.error(f"An error occurred: {str(e)}")
-        else:
-            st.warning("Please enter your OpenAI API key to generate questions.")
+        with st.spinner("Generating questions... " + get_random_quote()):
+            try:
+                csv_content = generate_questions(params, api_key)
+                
+                df = process_assistant_response(csv_content)
+                st.dataframe(df)
+                
+                csv = df.to_csv(index=False)
+                st.download_button(
+                    label="Download CSV",
+                    data=csv,
+                    file_name="generated_questions.csv",
+                    mime="text/csv",
+                )
+            except Exception as e:
+                st.error(f"An error occurred: {str(e)}")
 
 if __name__ == "__main__":
     main()
