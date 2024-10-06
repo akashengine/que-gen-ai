@@ -1,0 +1,35 @@
+.stApp {
+    background-color: #1E1E1E;
+    color: #FFFFFF;
+}
+
+.stDataFrame {
+    font-size: 14px;
+}
+
+.stDataFrame td {
+    background-color: #2D2D2D;
+}
+
+.stDataFrame tr:nth-child(even) {
+    background-color: #353535;
+}
+
+.stProgress .st-bo {
+    background-color: #4CAF50;
+}
+
+.stButton>button {
+    background-color: #4CAF50;
+    color: white;
+}
+
+.stSelectbox>div>div {
+    background-color: #2D2D2D;
+    color: white;
+}
+
+.stTextInput>div>div>input {
+    background-color: #2D2D2D;
+    color: white;
+}
