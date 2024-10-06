@@ -49,7 +49,7 @@ CSS = """
     background-color: #4CAF50;
     color: white;
 }
-.stSelectbox>div>div {
+.stSelectbox>div>div, .stMultiselect>div>div {
     background-color: #2D2D2D;
     color: white;
 }
@@ -72,7 +72,7 @@ def create_sidebar():
     pdf_options = PDF_NAMES.get(subject, {})
     if isinstance(pdf_options, dict):
         pdf_options = pdf_options.get(topic, [])
-    selected_pdf = st.sidebar.selectbox("Select PDF", pdf_options)
+    selected_pdfs = st.sidebar.multiselect("Select PDF(s)", pdf_options)
     
     question_type = st.sidebar.selectbox("Question Type", ["MCQ", "Fill in the Blanks", "Short Answer", "Descriptive/Essay", "Match the Following", "True/False"])
     num_questions = st.sidebar.number_input("Number of Questions", min_value=1, max_value=50, value=5)
@@ -80,7 +80,7 @@ def create_sidebar():
     language = st.sidebar.selectbox("Language", ["English", "Hindi", "Both"])
     question_source = st.sidebar.selectbox("Question Source", ["Rewrite existing", "Create new"])
     
-    return subject, topic, sub_topic, selected_pdf, question_type, num_questions, difficulty, language, question_source
+    return subject, topic, sub_topic, selected_pdfs, question_type, num_questions, difficulty, language, question_source
 
 def validate_api_key(api_key):
     try:
@@ -91,16 +91,29 @@ def validate_api_key(api_key):
         return False
 
 def generate_questions(params, api_key):
-    subject, topic, sub_topic, selected_pdf, question_type, num_questions, difficulty, language, question_source = params
+    subject, topic, sub_topic, selected_pdfs, question_type, num_questions, difficulty, language, question_source = params
     
     client = OpenAI(api_key=api_key)
+    pdf_text = ", ".join(selected_pdfs) if selected_pdfs else "No specific PDF selected"
 
     thread = client.beta.threads.create()
 
     message = client.beta.threads.messages.create(
         thread_id=thread.id,
         role="user",
-        content=f"Generate {num_questions} {question_type} questions for {subject} - {topic} - {sub_topic}. Use content from {selected_pdf}. Difficulty: {difficulty}. Language: {language}. Source: {question_source}. Please provide the output in CSV format with the following headers: Subject,Topic,Sub-Topic,Question Type,Question Text (English),Question Text (Hindi),Option A (English),Option B (English),Option C (English),Option D (English),Option A (Hindi),Option B (Hindi),Option C (Hindi),Option D (Hindi),Correct Answer (English),Correct Answer (Hindi),Explanation (English),Explanation (Hindi),Difficulty Level,Language,Source PDF Name,Source Page Number,Original Question Number,Year of Original Question"
+        content=f"""
+        Input Parameters:
+        • Subject: {subject}
+        • Topic: {topic}
+        • Sub-Topic: {sub_topic}
+        • Question Type: {question_type}
+        • Number of Questions: {num_questions}
+        • Difficulty Level: {difficulty}
+        • Language: {language}
+        • Question Source: {question_source}
+        Please generate the requested number of questions following the above guidelines. Use content from: {pdf_text}. 
+        Do not generate any extra text apart from the CSV; only provide the CSV output as per the specified format.
+        """
     )
 
     run = client.beta.threads.runs.create(
@@ -172,10 +185,10 @@ def main():
         progress_bar = st.progress(0)
         status_text = st.empty()
 
-        for i in range(100):
+        for i in range(0, 101, 5):
             status_text.text(get_random_quote())
-            progress_bar.progress(i + 1)
-            time.sleep(0.01)  # Shortened time for better UX
+            progress_bar.progress(i)
+            time.sleep(5)  # Update quote every 5 seconds
 
         try:
             csv_content = generate_questions(params, api_key)
