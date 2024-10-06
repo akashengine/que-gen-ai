@@ -1,9 +1,10 @@
 import streamlit as st
 import pandas as pd
+import io
 import time
 import random
 from openai import OpenAI
-from subject_data import SUBJECTS, TOPICS, SUB_TOPICS, PDF_NAMES
+from subject_data import SUBJECTS, TOPICS, PDF_NAMES
 
 # Constants
 ASSISTANT_ID = "asst_1cp5iEnWInbKxO05X1fEVKFC"
@@ -29,14 +30,20 @@ def create_sidebar():
     st.sidebar.title("Question Generator")
     subject = st.sidebar.selectbox("Subject", SUBJECTS)
     topic = st.sidebar.selectbox("Topic", TOPICS.get(subject, []))
-    sub_topic = st.sidebar.selectbox("Sub-Topic", SUB_TOPICS.get(topic, ["General"]))
+    sub_topic = st.sidebar.text_input("Sub-Topic", "General")
+    
+    pdf_options = PDF_NAMES.get(subject, {})
+    if isinstance(pdf_options, dict):
+        pdf_options = pdf_options.get(topic, [])
+    selected_pdf = st.sidebar.selectbox("Select PDF", pdf_options)
+    
     question_type = st.sidebar.selectbox("Question Type", ["MCQ", "Fill in the Blanks", "Short Answer", "Descriptive/Essay", "Match the Following", "True/False"])
     num_questions = st.sidebar.number_input("Number of Questions", min_value=1, max_value=50, value=5)
     difficulty = st.sidebar.selectbox("Difficulty Level", ["Easy", "Medium", "Hard"])
     language = st.sidebar.selectbox("Language", ["English", "Hindi", "Both"])
     question_source = st.sidebar.selectbox("Question Source", ["Rewrite existing", "Create new"])
     
-    return subject, topic, sub_topic, question_type, num_questions, difficulty, language, question_source
+    return subject, topic, sub_topic, selected_pdf, question_type, num_questions, difficulty, language, question_source
 
 def validate_api_key(api_key):
     try:
@@ -47,7 +54,7 @@ def validate_api_key(api_key):
         return False
 
 def generate_questions(params, api_key):
-    subject, topic, sub_topic, question_type, num_questions, difficulty, language, question_source = params
+    subject, topic, sub_topic, selected_pdf, question_type, num_questions, difficulty, language, question_source = params
     
     client = OpenAI(api_key=api_key)
 
@@ -56,7 +63,7 @@ def generate_questions(params, api_key):
     message = client.beta.threads.messages.create(
         thread_id=thread.id,
         role="user",
-        content=f"Generate {num_questions} {question_type} questions for {subject} - {topic} - {sub_topic}. Difficulty: {difficulty}. Language: {language}. Source: {question_source}."
+        content=f"Generate {num_questions} {question_type} questions for {subject} - {topic} - {sub_topic}. Use content from {selected_pdf}. Difficulty: {difficulty}. Language: {language}. Source: {question_source}. Please provide the output in CSV format with the following headers: Subject,Topic,Sub-Topic,Question Type,Question Text (English),Question Text (Hindi),Option A (English),Option B (English),Option C (English),Option D (English),Option A (Hindi),Option B (Hindi),Option C (Hindi),Option D (Hindi),Correct Answer (English),Correct Answer (Hindi),Explanation (English),Explanation (Hindi),Difficulty Level,Language,Source PDF Name,Source Page Number,Original Question Number,Year of Original Question"
     )
 
     run = client.beta.threads.runs.create(
@@ -74,8 +81,34 @@ def generate_questions(params, api_key):
 
     return csv_content
 
+def process_csv_content(csv_content):
+    # Remove any text before the actual CSV data
+    csv_start = csv_content.find("Subject,Topic,")
+    if csv_start != -1:
+        csv_content = csv_content[csv_start:]
+
+    # Read CSV content
+    df = pd.read_csv(io.StringIO(csv_content))
+    
+    # Ensure all expected columns are present
+    expected_columns = [
+        "Subject", "Topic", "Sub-Topic", "Question Type", "Question Text (English)", 
+        "Question Text (Hindi)", "Option A (English)", "Option B (English)", 
+        "Option C (English)", "Option D (English)", "Option A (Hindi)", 
+        "Option B (Hindi)", "Option C (Hindi)", "Option D (Hindi)", 
+        "Correct Answer (English)", "Correct Answer (Hindi)", "Explanation (English)", 
+        "Explanation (Hindi)", "Difficulty Level", "Language", "Source PDF Name", 
+        "Source Page Number", "Original Question Number", "Year of Original Question"
+    ]
+    
+    for col in expected_columns:
+        if col not in df.columns:
+            df[col] = ""
+    
+    return df[expected_columns]
+
 def main():
-     st.set_page_config(page_title="Drishti QueAI", page_icon="📚", layout="wide")
+    st.set_page_config(page_title="Drishti QueAI", page_icon="📚", layout="wide")
     
     # Load custom CSS
     with open('styles.css') as f:
@@ -111,7 +144,7 @@ def main():
         try:
             csv_content = generate_questions(params, api_key)
             
-            df = pd.read_csv(pd.compat.StringIO(csv_content))
+            df = process_csv_content(csv_content)
             
             st.dataframe(df, use_container_width=True)
             
