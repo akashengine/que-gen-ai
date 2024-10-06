@@ -23,6 +23,40 @@ QUOTES = [
     "Challenge your limits, expand your knowledge, achieve your dreams."
 ]
 
+# CSS styles
+CSS = """
+<style>
+.stApp {
+    background-color: #1E1E1E;
+    color: #FFFFFF;
+}
+.stDataFrame {
+    font-size: 14px;
+}
+.stDataFrame td {
+    background-color: #2D2D2D;
+}
+.stDataFrame tr:nth-child(even) {
+    background-color: #353535;
+}
+.stProgress .st-bo {
+    background-color: #4CAF50;
+}
+.stButton>button {
+    background-color: #4CAF50;
+    color: white;
+}
+.stSelectbox>div>div {
+    background-color: #2D2D2D;
+    color: white;
+}
+.stTextInput>div>div>input {
+    background-color: #2D2D2D;
+    color: white;
+}
+</style>
+"""
+
 def get_random_quote():
     return random.choice(QUOTES)
 
@@ -110,9 +144,8 @@ def process_csv_content(csv_content):
 def main():
     st.set_page_config(page_title="Drishti QueAI", page_icon="📚", layout="wide")
     
-    # Load custom CSS
-    with open('styles.css') as f:
-        st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
+    # Apply CSS
+    st.markdown(CSS, unsafe_allow_html=True)
     
     st.title("Drishti QueAI")
 
