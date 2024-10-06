@@ -75,7 +75,12 @@ def generate_questions(params, api_key):
     return csv_content
 
 def main():
-    st.set_page_config(page_title="Drishti QueAI", page_icon="📚", layout="wide")
+     st.set_page_config(page_title="Drishti QueAI", page_icon="📚", layout="wide")
+    
+    # Load custom CSS
+    with open('styles.css') as f:
+        st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
+    
     st.title("Drishti QueAI")
 
     if "api_key" not in st.session_state:
