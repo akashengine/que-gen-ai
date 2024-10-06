@@ -179,7 +179,19 @@ def main():
             
             df = process_csv_content(csv_content)
             
-            st.dataframe(df, use_container_width=True)
+            # Display the DataFrame with horizontal scrolling
+            st.markdown(
+                """
+                <style>
+                .stDataFrame {
+                    width: 100%;
+                    overflow-x: auto;
+                }
+                </style>
+                """,
+                unsafe_allow_html=True
+            )
+            st.dataframe(df)
             
             csv = df.to_csv(index=False)
             st.download_button(
