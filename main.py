@@ -122,7 +122,7 @@ def generate_questions(params, api_key):
     )
 
     while run.status != "completed":
-        time.sleep(1)
+        time.sleep(0.5)  # Faster polling to reduce latency
         run = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
 
     messages = client.beta.threads.messages.list(thread_id=thread.id)
@@ -185,10 +185,11 @@ def main():
         progress_bar = st.progress(0)
         status_text = st.empty()
 
-        for i in range(0, 101, 5):
+        start_time = time.time()
+        while time.time() - start_time < 3:  # Keep the loading bar for only 3 seconds
+            progress_bar.progress(min(int((time.time() - start_time) / 3 * 100), 100))
             status_text.text(get_random_quote())
-            progress_bar.progress(i)
-            time.sleep(5)  # Update quote every 5 seconds
+            time.sleep(0.5)
 
         try:
             csv_content = generate_questions(params, api_key)
