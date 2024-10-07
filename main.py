@@ -65,14 +65,24 @@ def get_random_quote():
 
 def create_sidebar():
     st.sidebar.title("Question Generator")
-    subject = st.sidebar.selectbox("Subject", SUBJECTS)
-    topic = st.sidebar.selectbox("Topic", TOPICS.get(subject, []))
+    subjects = st.sidebar.multiselect("Select Subject(s)", SUBJECTS)
+    
+    all_topics = []
+    for subject in subjects:
+        all_topics.extend(TOPICS.get(subject, []))
+    topics = st.sidebar.multiselect("Select Topic(s)", list(set(all_topics)))
+    
     sub_topic = st.sidebar.text_input("Sub-Topic", "General")
     
-    pdf_options = PDF_NAMES.get(subject, {})
-    if isinstance(pdf_options, dict):
-        pdf_options = pdf_options.get(topic, [])
-    selected_pdfs = st.sidebar.multiselect("Select PDF(s)", pdf_options)
+    pdf_options = []
+    for subject in subjects:
+        subject_pdfs = PDF_NAMES.get(subject, {})
+        if isinstance(subject_pdfs, dict):
+            for topic in topics:
+                pdf_options.extend(subject_pdfs.get(topic, []))
+        else:
+            pdf_options.extend(subject_pdfs)
+    selected_pdfs = st.sidebar.multiselect("Select PDF(s)", list(set(pdf_options)))
     
     question_type = st.sidebar.selectbox("Question Type", ["MCQ", "Fill in the Blanks", "Short Answer", "Descriptive/Essay", "Match the Following", "True/False"])
     num_questions = st.sidebar.number_input("Number of Questions", min_value=1, max_value=50, value=5)
@@ -80,7 +90,7 @@ def create_sidebar():
     language = st.sidebar.selectbox("Language", ["English", "Hindi", "Both"])
     question_source = st.sidebar.selectbox("Question Source", ["Rewrite existing", "Create new"])
     
-    return subject, topic, sub_topic, selected_pdfs, question_type, num_questions, difficulty, language, question_source
+    return subjects, topics, sub_topic, selected_pdfs, question_type, num_questions, difficulty, language, question_source
 
 def validate_api_key(api_key):
     try:
@@ -91,9 +101,11 @@ def validate_api_key(api_key):
         return False
 
 def generate_questions(params, api_key):
-    subject, topic, sub_topic, selected_pdfs, question_type, num_questions, difficulty, language, question_source = params
+    subjects, topics, sub_topic, selected_pdfs, question_type, num_questions, difficulty, language, question_source = params
     
     client = OpenAI(api_key=api_key)
+    subjects_text = ", ".join(subjects) if subjects else "No specific subject selected"
+    topics_text = ", ".join(topics) if topics else "No specific topic selected"
     pdf_text = ", ".join(selected_pdfs) if selected_pdfs else "No specific PDF selected"
 
     thread = client.beta.threads.create()
@@ -103,8 +115,8 @@ def generate_questions(params, api_key):
         role="user",
         content=f"""
         Input Parameters:
-        • Subject: {subject}
-        • Topic: {topic}
+        • Subjects: {subjects_text}
+        • Topics: {topics_text}
         • Sub-Topic: {sub_topic}
         • Question Type: {question_type}
         • Number of Questions: {num_questions}
