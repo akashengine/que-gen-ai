@@ -84,13 +84,14 @@ def create_sidebar():
             pdf_options.extend(subject_pdfs)
     selected_pdfs = st.sidebar.multiselect("Select PDF(s)", list(set(pdf_options)))
     
-    question_type = st.sidebar.selectbox("Question Type", ["MCQ", "Fill in the Blanks", "Short Answer", "Descriptive/Essay", "Match the Following", "True/False"])
+    question_types = st.sidebar.multiselect("Question Type(s)", ["MCQ", "Fill in the Blanks", "Short Answer", "Descriptive/Essay", "Match the Following", "True/False"])
     num_questions = st.sidebar.number_input("Number of Questions", min_value=1, max_value=50, value=5)
-    difficulty = st.sidebar.selectbox("Difficulty Level", ["Easy", "Medium", "Hard"])
+    difficulty_levels = st.sidebar.multiselect("Difficulty Level(s)", ["Easy", "Medium", "Hard"])
     language = st.sidebar.selectbox("Language", ["English", "Hindi", "Both"])
     question_source = st.sidebar.selectbox("Question Source", ["Rewrite existing", "Create new"])
+    year_range = st.sidebar.slider("Year Range", 1947, 2024, (2000, 2024))
     
-    return subjects, topics, sub_topic, selected_pdfs, question_type, num_questions, difficulty, language, question_source
+    return subjects, topics, sub_topic, selected_pdfs, question_types, num_questions, difficulty_levels, language, question_source, year_range
 
 def validate_api_key(api_key):
     try:
@@ -101,12 +102,14 @@ def validate_api_key(api_key):
         return False
 
 def generate_questions(params, api_key):
-    subjects, topics, sub_topic, selected_pdfs, question_type, num_questions, difficulty, language, question_source = params
+    subjects, topics, sub_topic, selected_pdfs, question_types, num_questions, difficulty_levels, language, question_source, year_range = params
     
     client = OpenAI(api_key=api_key)
     subjects_text = ", ".join(subjects) if subjects else "No specific subject selected"
     topics_text = ", ".join(topics) if topics else "No specific topic selected"
     pdf_text = ", ".join(selected_pdfs) if selected_pdfs else "No specific PDF selected"
+    question_types_text = ", ".join(question_types)
+    difficulty_levels_text = ", ".join(difficulty_levels)
 
     thread = client.beta.threads.create()
 
@@ -114,17 +117,26 @@ def generate_questions(params, api_key):
         thread_id=thread.id,
         role="user",
         content=f"""
-        Input Parameters:
+        Generate {num_questions} questions based on the following parameters:
         • Subjects: {subjects_text}
         • Topics: {topics_text}
         • Sub-Topic: {sub_topic}
-        • Question Type: {question_type}
-        • Number of Questions: {num_questions}
-        • Difficulty Level: {difficulty}
+        • Question Type(s): {question_types_text}
+        • Difficulty Level(s): {difficulty_levels_text}
         • Language: {language}
         • Question Source: {question_source}
-        Please generate the requested number of questions following the above guidelines. Use content from: {pdf_text}. 
-        Do not generate any extra text apart from the CSV; only provide the CSV output as per the specified format.
+        • Year Range: {year_range[0]} to {year_range[1]}
+        • Reference Material: {pdf_text}
+
+        Instructions:
+        1. Use the specified PDFs as reference material.
+        2. For each question, use the actual question number from the referenced PDF page.
+        3. Ensure the year for each question falls within the specified range.
+        4. Provide answers and explanations in both English and Hindi if the language is set to "Both".
+        5. Format the output as a CSV with the following headers:
+           Subject,Topic,Sub-Topic,Question Type,Question Text (English),Question Text (Hindi),Option A (English),Option B (English),Option C (English),Option D (English),Option A (Hindi),Option B (Hindi),Option C (Hindi),Option D (Hindi),Correct Answer (English),Correct Answer (Hindi),Explanation (English),Explanation (Hindi),Difficulty Level,Language,Source PDF Name,Source Page Number,Original Question Number,Year of Original Question
+
+        Important: Do not generate any text before or after the CSV content. The response should contain only the CSV data.
         """
     )
 
@@ -134,7 +146,7 @@ def generate_questions(params, api_key):
     )
 
     while run.status != "completed":
-        time.sleep(0.5)  # Faster polling to reduce latency
+        time.sleep(0.5)
         run = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
 
     messages = client.beta.threads.messages.list(thread_id=thread.id)
@@ -144,13 +156,21 @@ def generate_questions(params, api_key):
     return csv_content
 
 def process_csv_content(csv_content):
+    # Check if the content is not found in knowledge text
+    if "Not found in knowledge text" in csv_content:
+        return None
+
     # Remove any text before the actual CSV data
     csv_start = csv_content.find("Subject,Topic,")
     if csv_start != -1:
         csv_content = csv_content[csv_start:]
 
     # Read CSV content
-    df = pd.read_csv(io.StringIO(csv_content))
+    try:
+        df = pd.read_csv(io.StringIO(csv_content))
+    except pd.errors.ParserError:
+        st.error("Error parsing CSV data. The assistant's response may not be in the correct format.")
+        return None
     
     # Ensure all expected columns are present
     expected_columns = [
@@ -207,26 +227,28 @@ def main():
             csv_content = generate_questions(params, api_key)
             df = process_csv_content(csv_content)
             
-            # Save generated DataFrame to session state
-            st.session_state.generated_df = df
-            
-            # Display the DataFrame with horizontal scrolling
-            st.markdown(
-                """
-                <style>
-                .stDataFrame {
-                    width: 100%;
-                    overflow-x: auto;
-                }
-                </style>
-                """,
-                unsafe_allow_html=True
-            )
-            st.dataframe(df)
-            
-            # Create CSV from DataFrame and provide download button
-            if 'generated_df' in st.session_state:
-                csv = st.session_state.generated_df.to_csv(index=False)
+            if df is None:
+                st.warning("No questions could be generated based on the given parameters. The content may not be found in the knowledge text.")
+            else:
+                # Save generated DataFrame to session state
+                st.session_state.generated_df = df
+                
+                # Display the DataFrame with horizontal scrolling
+                st.markdown(
+                    """
+                    <style>
+                    .stDataFrame {
+                        width: 100%;
+                        overflow-x: auto;
+                    }
+                    </style>
+                    """,
+                    unsafe_allow_html=True
+                )
+                st.dataframe(df)
+                
+                # Create CSV from DataFrame and provide download button
+                csv = df.to_csv(index=False)
                 st.download_button(
                     label="Download CSV",
                     data=csv,
