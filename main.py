@@ -7,7 +7,7 @@ from openai import OpenAI
 from subject_data import SUBJECTS, TOPICS, PDF_NAMES
 
 # Constants
-ASSISTANT_ID = "asst_XTavO6ea0DASnN8cvBmYVxDX"
+ASSISTANT_ID = "asst_WejSQNw2pN2DRnUOXpU3vMeX"
 
 # Inspirational quotes
 QUOTES = [
