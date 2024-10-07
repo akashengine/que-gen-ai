@@ -130,10 +130,12 @@ def generate_questions(params, api_key):
 
         Instructions:
         1. Use the specified PDFs as reference material.
-        2. For each question, use the actual question number from the referenced PDF page.
+        2. For each question, use the actual question number and page number from the referenced PDF.
         3. Ensure the year for each question falls within the specified range.
-        4. Provide answers and explanations in both English and Hindi if the language is set to "Both".
-        5. Format the output as a CSV with the following headers:
+        4. If the language is set to "Hindi", provide all text (questions, options, answers, explanations) in Hindi only.
+        5. If the language is set to "English", provide all text in English only.
+        6. If the language is set to "Both", provide all text in both English and Hindi.
+        7. Format the output as a CSV with the following headers:
            Subject,Topic,Sub-Topic,Question Type,Question Text (English),Question Text (Hindi),Option A (English),Option B (English),Option C (English),Option D (English),Option A (Hindi),Option B (Hindi),Option C (Hindi),Option D (Hindi),Correct Answer (English),Correct Answer (Hindi),Explanation (English),Explanation (Hindi),Difficulty Level,Language,Source PDF Name,Source Page Number,Original Question Number,Year of Original Question
 
         Important: Do not generate any text before or after the CSV content. The response should contain only the CSV data.
@@ -155,7 +157,7 @@ def generate_questions(params, api_key):
 
     return csv_content
 
-def process_csv_content(csv_content):
+def process_csv_content(csv_content, language):
     # Check if the content is not found in knowledge text
     if "Not found in knowledge text" in csv_content:
         return None
@@ -187,7 +189,15 @@ def process_csv_content(csv_content):
         if col not in df.columns:
             df[col] = ""
     
-    return df[expected_columns]
+    # Filter columns based on language selection
+    if language == "Hindi":
+        columns_to_show = [col for col in df.columns if "Hindi" in col or col not in ["Question Text (English)", "Option A (English)", "Option B (English)", "Option C (English)", "Option D (English)", "Correct Answer (English)", "Explanation (English)"]]
+    elif language == "English":
+        columns_to_show = [col for col in df.columns if "Hindi" not in col]
+    else:  # Both
+        columns_to_show = df.columns
+
+    return df[columns_to_show]
 
 def main():
     st.set_page_config(page_title="Drishti QueAI", page_icon="📚", layout="wide")
@@ -225,7 +235,7 @@ def main():
 
         try:
             csv_content = generate_questions(params, api_key)
-            df = process_csv_content(csv_content)
+            df = process_csv_content(csv_content, params[7])  # params[7] is the language selection
             
             if df is None:
                 st.warning("No questions could be generated based on the given parameters. The content may not be found in the knowledge text.")
