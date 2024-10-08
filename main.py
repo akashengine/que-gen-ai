@@ -238,17 +238,14 @@ Follow all the detailed steps provided previously to generate high-quality exam 
 
     retry_count = 0
 
-    while retry_count < MAX_RETRIES:
+   while retry_count < MAX_RETRIES:
         try:
-            # Create a new thread for each run
             thread = client.beta.threads.create()
-
             message = client.beta.threads.messages.create(
                 thread_id=thread.id,
                 role="user",
                 content=prompt
             )
-
             run = client.beta.threads.runs.create(
                 thread_id=thread.id,
                 assistant_id=ASSISTANT_ID,
@@ -263,7 +260,6 @@ Follow all the detailed steps provided previously to generate high-quality exam 
 
                 if run.status == "completed":
                     messages = client.beta.threads.messages.list(thread_id=thread.id)
-                    # Get the last assistant message
                     assistant_messages = [msg for msg in messages.data if msg.role == "assistant"]
                     if not assistant_messages:
                         st.error("No assistant response found.")
@@ -271,15 +267,8 @@ Follow all the detailed steps provided previously to generate high-quality exam 
 
                     last_message = assistant_messages[-1]
                     csv_content = last_message.content[0].text.value
+                    return csv_content  # Return the raw CSV content
 
-                    # Process CSV content
-                    df = process_csv_content(csv_content, language_param)
-                    if df is not None and not df.empty:
-                        return df
-                    else:
-                        st.warning("No valid CSV content generated. Retrying...")
-                        retry_count += 1
-                        break
                 elif run.status in ["failed", "cancelled", "expired"]:
                     st.error(f"Run {run.status}. Error: {run.last_error}. Retrying...")
                     retry_count += 1
@@ -392,11 +381,20 @@ def main():
     if st.sidebar.button("Generate Questions"):
         with st.spinner("Generating questions..."):
             try:
-                cumulative_df = generate_questions(params, api_key)
-                if cumulative_df is not None and not cumulative_df.empty:
-                    st.success(f"Generated {len(cumulative_df)} questions successfully.")
-                    csv_data = cumulative_df.to_csv(index=False)
-                    st.download_button(label="Download CSV", data=csv_data, file_name="generated_questions.csv", mime="text/csv")
+                csv_content = generate_questions_batch(params, api_key, num_questions, params[8])  # params[8] is language
+                if csv_content:
+                    st.success("Questions generated successfully. Here's the raw CSV content:")
+                    st.text_area("CSV Content", csv_content, height=300)
+                    
+                    if st.button("Process CSV"):
+                        df = process_csv_content(csv_content, params[8])  # params[8] is language
+                        if df is not None and not df.empty:
+                            st.success(f"Processed {len(df)} questions successfully.")
+                            st.dataframe(df)
+                            csv_data = df.to_csv(index=False)
+                            st.download_button(label="Download CSV", data=csv_data, file_name="generated_questions.csv", mime="text/csv")
+                        else:
+                            st.error("Failed to process CSV content. Please check the format.")
                 else:
                     st.error("No questions were generated. Please try again.")
             except Exception as e:
@@ -404,4 +402,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
