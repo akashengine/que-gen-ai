@@ -95,7 +95,7 @@ def create_sidebar():
     selected_pdfs = st.sidebar.multiselect("Select PDF(s)", list(set(pdf_options)))
     keywords = st.sidebar.text_input("Keywords", "")
     question_types = st.sidebar.multiselect("Question Type(s)", ["MCQ", "Fill in the Blanks", "Short Answer", "Descriptive/Essay", "Match the Following", "True/False"])
-    num_questions = st.sidebar.number_input("Number of Questions", min_value=1, max_value=250, value=5)
+    num_questions = st.sidebar.number_input("Number of Questions", min_value=1, max_value=5000, value=5)
     difficulty_levels = st.sidebar.multiselect("Difficulty Level(s)", ["Easy", "Medium", "Hard"])
     language = st.sidebar.selectbox("Language", ["English", "Hindi", "Both"])
     question_source = st.sidebar.selectbox("Question Source", ["Rewrite existing", "Create new"])
@@ -128,21 +128,21 @@ def process_csv_content(csv_content, language):
     except pd.errors.ParserError:
         st.error("Error parsing CSV data. The assistant's response may not be in the correct format.")
         return None
-    
+
     expected_columns = [
-        "Subject", "Topic", "Question Type", "Question Text (English)", 
-        "Question Text (Hindi)", "Option A (English)", "Option B (English)", 
-        "Option C (English)", "Option D (English)", "Option A (Hindi)", 
-        "Option B (Hindi)", "Option C (Hindi)", "Option D (Hindi)", 
-        "Correct Answer (English)", "Correct Answer (Hindi)", "Explanation (English)", 
-        "Explanation (Hindi)", "Difficulty Level", "Language", "Source PDF Name", 
+        "Subject", "Topic", "Question Type", "Question Text (English)",
+        "Question Text (Hindi)", "Option A (English)", "Option B (English)",
+        "Option C (English)", "Option D (English)", "Option A (Hindi)",
+        "Option B (Hindi)", "Option C (Hindi)", "Option D (Hindi)",
+        "Correct Answer (English)", "Correct Answer (Hindi)", "Explanation (English)",
+        "Explanation (Hindi)", "Difficulty Level", "Language", "Source PDF Name",
         "Source Page Number", "Original Question Number", "Year of Original Question"
     ]
-    
+
     for col in expected_columns:
         if col not in df.columns:
             df[col] = ""
-    
+
     if language == "Hindi":
         columns_to_show = [col for col in df.columns if "Hindi" in col or col not in ["Question Text (English)", "Option A (English)", "Option B (English)", "Option C (English)", "Option D (English)", "Correct Answer (English)", "Explanation (English)"]]
     elif language == "English":
@@ -165,37 +165,40 @@ def generate_questions(params, api_key):
     total_questions = 0
     all_csv_content = ""
     retry_count = 0
-    
-    while total_questions < num_questions and retry_count < MAX_RETRIES:
-        remaining_questions = num_questions - total_questions
-        prompt = f"""
-        Generate {remaining_questions} questions based on the following parameters:
-        • Subjects: {subjects_text}
-        • Topics: {topics_text}
-        • Keywords: {keywords}
-        • Question Type(s): {question_types_text}
-        • Difficulty Level(s): {difficulty_levels_text}
-        • Language: {language}
-        • Question Source: {question_source}
-        • Year Range: {year_range[0]} to {year_range[1]}
-        • Reference Material: {pdf_text}
 
-        Instructions:
-        1. Use the specified PDFs as reference material.
-        2. For each question, use the actual question number and page number from the referenced PDF.
-        3. Format the output as a CSV with the following columns:
-           Subject,Topic,Question Type,Question Text (English),Question Text (Hindi),Option A (English),Option B (English),Option C (English),Option D (English),Option A (Hindi),Option B (Hindi),Option C (Hindi),Option D (Hindi),Correct Answer (English),Correct Answer (Hindi),Explanation (English),Explanation (Hindi),Difficulty Level,Language,Source PDF Name,Source Page Number,Original Question Number,Year of Original Question
-        4. Ensure each row is properly formatted as CSV, with values separated by commas and enclosed in double quotes if necessary.
-        5. Make sure to fill in all columns, especially the Correct Answer (English) column.
-        6. The Correct Answer (English) should be the full text of the correct option, not just the letter.
-        7. Ensure that the Difficulty Level matches the requested level(s).
-        8. The Year of Original Question should be within the specified year range.
-        9. Do not include a header row in the CSV output.
-        """
-        
+    batch_size = 5  # Number of questions to generate per batch
+
+    while total_questions < num_questions and retry_count < MAX_RETRIES:
+        remaining_questions = min(num_questions - total_questions, batch_size)
+        prompt = f"""
+Generate {remaining_questions} questions based on the following parameters:
+• Subjects: {subjects_text}
+• Topics: {topics_text}
+• Keywords: {keywords}
+• Question Type(s): {question_types_text}
+• Difficulty Level(s): {difficulty_levels_text}
+• Language: {language}
+• Question Source: {question_source}
+• Year Range: {year_range[0]} to {year_range[1]}
+• Reference Material: {pdf_text}
+
+Instructions:
+1. Use the specified PDFs as reference material.
+2. For each question, use the actual question number and page number from the referenced PDF.
+3. Format the output as a CSV with the following columns:
+   Subject,Topic,Question Type,Question Text (English),Question Text (Hindi),Option A (English),Option B (English),Option C (English),Option D (English),Option A (Hindi),Option B (Hindi),Option C (Hindi),Option D (Hindi),Correct Answer (English),Correct Answer (Hindi),Explanation (English),Explanation (Hindi),Difficulty Level,Language,Source PDF Name,Source Page Number,Original Question Number,Year of Original Question
+4. Ensure each row is properly formatted as CSV, with values separated by commas and enclosed in double quotes if necessary.
+5. Make sure to fill in all columns, especially the Correct Answer (English) column.
+6. The Correct Answer (English) should be the full text of the correct option, not just the letter.
+7. Ensure that the Difficulty Level matches the requested level(s).
+8. The Year of Original Question should be within the specified year range.
+9. Do not include a header row in the CSV output.
+10. Make sure to provide detailed explanation in the Explanation (English) field and also explain why other options are not suitable for this.
+"""
+
         try:
             thread = client.beta.threads.create()
-            
+
             message = client.beta.threads.messages.create(
                 thread_id=thread.id,
                 role="user",
@@ -213,20 +216,25 @@ def generate_questions(params, api_key):
             while True:
                 time.sleep(POLLING_INTERVAL)
                 run = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
-                
+
                 if run.status == "completed":
                     messages = client.beta.threads.messages.list(thread_id=thread.id)
                     last_message = messages.data[0]  # Get the most recent message
                     csv_content = last_message.content[0].text.value
-                    
+
                     # Process CSV content
                     df = process_csv_content(csv_content, language)
                     if df is not None and not df.empty:
+                        # Display the dataframe for the current batch
+                        st.write(f"Generated {len(df)} questions:")
+                        st.dataframe(df)
+
+                        # Save the data
                         all_csv_content += csv_content + "\n"  # Add newline to separate batches
                         new_questions = len(df)
                         total_questions += new_questions
                         retry_count = 0  # Reset retry count on successful generation
-                        st.success(f"Generated {new_questions} questions. Total: {total_questions}/{num_questions}")
+                        st.success(f"Total questions generated: {total_questions}/{num_questions}")
                     else:
                         st.warning("No valid CSV content generated. Retrying...")
                         retry_count += 1
@@ -239,7 +247,7 @@ def generate_questions(params, api_key):
                     st.error("Run requires action. This shouldn't happen with our current setup. Retrying...")
                     retry_count += 1
                     break
-                
+
                 if time.time() - start_time > MAX_RUN_TIME:
                     st.warning("Run took too long. Cancelling and retrying...")
                     client.beta.threads.runs.cancel(thread_id=thread.id, run_id=run.id)
@@ -275,14 +283,14 @@ def main():
 
     if st.sidebar.button("Generate Questions"):
         csv_content = generate_questions(params, api_key)
-        
+
         if csv_content:
             # Process the entire CSV content without adding an extra header
             df = process_csv_content(csv_content, params[7])  # params[7] should be the language parameter
-            
+
             if df is not None and not df.empty:
-                st.dataframe(df)
-                
+                st.success("All questions generated successfully.")
+
                 csv_data = df.to_csv(index=False)
                 st.download_button(label="Download CSV", data=csv_data, file_name="generated_questions.csv", mime="text/csv")
             else:
