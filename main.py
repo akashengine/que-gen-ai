@@ -297,6 +297,8 @@ def main():
         st.session_state.csv_content = None
     if 'params' not in st.session_state:
         st.session_state.params = None
+    if 'processed_df' not in st.session_state:
+        st.session_state.processed_df = None
 
     api_key = st.text_input("Enter your API Key:", type="password")
 
@@ -311,40 +313,50 @@ def main():
     st.session_state.params = params
     num_questions = params[6]  # Extract num_questions from params
 
-    if st.sidebar.button("Generate Questions"):
-        with st.spinner("Generating questions..."):
-            try:
-                csv_content = generate_questions_batch(params, api_key, num_questions, params[8])  # params[8] is language
-                if csv_content:
-                    st.session_state.csv_content = csv_content
-                    st.success("Questions generated successfully. Here's the raw CSV content:")
-                    st.text_area("CSV Content", csv_content, height=300)
-                else:
-                    st.error("No questions were generated. Please try again.")
-            except Exception as e:
-                st.error(f"An error occurred while generating questions: {str(e)}")
+    col1, col2 = st.columns(2)
 
-    # Display CSV content and Process CSV button if CSV content exists
-    if st.session_state.csv_content:
-        st.text_area("CSV Content", st.session_state.csv_content, height=300)
-        
-        if st.button("Process CSV"):
+    with col1:
+        if st.button("Generate Questions"):
+            with st.spinner("Generating questions..."):
+                try:
+                    csv_content = generate_questions_batch(params, api_key, num_questions, params[8])  # params[8] is language
+                    if csv_content:
+                        st.session_state.csv_content = csv_content
+                        st.session_state.processed_df = None  # Reset processed dataframe
+                        st.success("Questions generated successfully.")
+                    else:
+                        st.error("No questions were generated. Please try again.")
+                except Exception as e:
+                    st.error(f"An error occurred while generating questions: {str(e)}")
+
+    with col2:
+        if st.session_state.csv_content and st.button("Process CSV"):
             with st.spinner("Processing CSV..."):
                 try:
                     df = process_csv_content(st.session_state.csv_content, st.session_state.params[8])  # params[8] is language
                     if df is not None and not df.empty:
+                        st.session_state.processed_df = df
                         st.success(f"Processed {len(df)} questions successfully.")
-                        st.dataframe(df)
-                        csv_data = df.to_csv(index=False)
-                        st.download_button(label="Download CSV", data=csv_data, file_name="generated_questions.csv", mime="text/csv")
                     else:
                         st.error("Failed to process CSV content. Please check the format.")
                 except Exception as e:
                     st.error(f"An error occurred while processing the CSV: {str(e)}")
                     st.text("Error details:")
                     st.exception(e)
-    else:
-        st.info("Generate questions first to see the CSV content and process it.")
+
+    # Display CSV content if available
+    if st.session_state.csv_content:
+        st.subheader("Generated CSV Content")
+        st.text_area("Raw CSV", st.session_state.csv_content, height=200)
+
+    # Display processed dataframe if available
+    if st.session_state.processed_df is not None:
+        st.subheader("Processed Questions")
+        st.dataframe(st.session_state.processed_df)
+        csv_data = st.session_state.processed_df.to_csv(index=False)
+        st.download_button(label="Download CSV", data=csv_data, file_name="generated_questions.csv", mime="text/csv")
+    elif st.session_state.csv_content:
+        st.info("Click 'Process CSV' to view the formatted questions and download options.")
 
 if __name__ == "__main__":
     main()
