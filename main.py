@@ -9,7 +9,7 @@ from subject_data import SUBJECTS, TOPICS, PDF_NAMES
 # Constants
 ASSISTANT_ID = "asst_WejSQNw2pN2DRnUOXpU3vMeX"
 MAX_COMPLETION_TOKENS = 16384
-MODEL_NAME = "gpt-4o"
+MODEL_NAME = "gpt-4o-mini"
 MAX_TOKENS = 128000
 MAX_RETRIES = 3
 POLLING_INTERVAL = 2  # seconds
