@@ -1,7 +1,65 @@
 import streamlit as st
+import pandas as pd
+import io
+import time
+import random
 from openai import OpenAI
 from typing_extensions import override
 from openai import AssistantEventHandler
+
+# Constants
+ASSISTANT_ID = "asst_WejSQNw2pN2DRnUOXpU3vMeX"
+
+# Inspirational quotes
+QUOTES = [
+    "Every question you tackle brings you closer to success.",
+    "Knowledge is the key; perseverance unlocks the door.",
+    "In the journey of learning, curiosity is your best companion.",
+    "Today's effort is tomorrow's excellence.",
+    "Embrace the challenge; it's shaping your future.",
+    "Small steps lead to big achievements in UPSC preparation.",
+    "Your dedication today paves the way for tomorrow's success.",
+    "Each question mastered is a step towards your goal.",
+    "In the world of UPSC, consistency is the true key to success.",
+    "Challenge your limits, expand your knowledge, achieve your dreams."
+]
+
+# CSS styles
+CSS = """
+<style>
+.stApp {
+    background-color: #1E1E1E;
+    color: #FFFFFF;
+}
+.stDataFrame {
+    font-size: 14px;
+    width: 100%;
+    overflow-x: auto;
+}
+.stDataFrame td {
+    background-color: #2D2D2D;
+    color: white;
+}
+.stDataFrame tr:nth-child(even) {
+    background-color: #353535;
+}
+.stProgress .st-bo {
+    background-color: #4CAF50;
+}
+.stButton>button {
+    background-color: #4CAF50;
+    color: white;
+}
+.stSelectbox>div>div, .stMultiselect>div>div {
+    background-color: #2D2D2D;
+    color: white;
+}
+.stTextInput>div>div>input {
+    background-color: #2D2D2D;
+    color: white;
+}
+</style>
+"""
 
 class EventHandler(AssistantEventHandler):
     def __init__(self):
@@ -24,6 +82,32 @@ class EventHandler(AssistantEventHandler):
             self.generated_rows.append(",".join(self.current_row))
         st.text_area("Final Output:", value="\n".join(self.generated_rows), height=400, key="final_output")
         st.experimental_rerun()
+
+def get_random_quote():
+    return random.choice(QUOTES)
+
+def create_sidebar():
+    st.sidebar.title("Question Generator")
+    subjects = st.sidebar.multiselect("Select Subject(s)", ["History", "Geography", "Polity", "Economy", "Science"])
+    topics = st.sidebar.multiselect("Select Topic(s)", ["Ancient India", "Medieval India", "Modern India", "World History", "Indian Geography", "World Geography", "Indian Constitution", "Governance", "International Relations", "Indian Economy", "World Economy", "Physics", "Chemistry", "Biology"])
+    sub_topic = st.sidebar.text_input("Sub-Topic", "General")
+    selected_pdfs = st.sidebar.multiselect("Select PDF(s)", ["NCERT History", "NCERT Geography", "NCERT Polity", "NCERT Economy", "NCERT Science"])
+    question_types = st.sidebar.multiselect("Question Type(s)", ["MCQ", "Fill in the Blanks", "Short Answer", "Descriptive/Essay", "Match the Following", "True/False"])
+    num_questions = st.sidebar.number_input("Number of Questions", min_value=1, max_value=250, value=5)
+    difficulty_levels = st.sidebar.multiselect("Difficulty Level(s)", ["Easy", "Medium", "Hard"])
+    language = st.sidebar.selectbox("Language", ["English", "Hindi", "Both"])
+    question_source = st.sidebar.selectbox("Question Source", ["Rewrite existing", "Create new"])
+    year_range = st.sidebar.slider("Year Range", 1947, 2024, (2000, 2024))
+    
+    return subjects, topics, sub_topic, selected_pdfs, question_types, num_questions, difficulty_levels, language, question_source, year_range
+
+def validate_api_key(api_key):
+    try:
+        client = OpenAI(api_key=api_key)
+        client.models.list()
+        return True
+    except Exception as e:
+        return False
 
 def generate_questions(params, api_key):
     subjects, topics, sub_topic, selected_pdfs, question_types, num_questions, difficulty_levels, language, question_source, year_range = params
