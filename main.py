@@ -12,7 +12,8 @@ MAX_COMPLETION_TOKENS = 16384
 MODEL_NAME = "gpt-4o"
 MAX_TOKENS = 128000
 MAX_RETRIES = 3
-POLLING_INTERVAL = 5  # seconds
+POLLING_INTERVAL = 2  # seconds
+MAX_RUN_TIME = 600  # 10 minutes in seconds
 
 # CSS Styling
 CSS = """
@@ -107,6 +108,23 @@ def create_sidebar():
     return subjects, selected_pdfs, sub_topic, keywords, question_types, num_questions, difficulty_levels, language, question_source, year_range
 
 # Generate questions with continuous runs
+import openai
+import time
+import pandas as pd
+import io
+import streamlit as st
+import tiktoken
+from subject_data import SUBJECTS, TOPICS, PDF_NAMES
+
+# Constants
+ASSISTANT_ID = "asst_WejSQNw2pN2DRnUOXpU3vMeX"
+MAX_COMPLETION_TOKENS = 16384
+MODEL_NAME = "gpt-4o"
+MAX_TOKENS = 128000
+MAX_RETRIES = 3
+POLLING_INTERVAL = 2  # seconds
+MAX_RUN_TIME = 600  # 10 minutes in seconds
+
 def generate_questions(params, api_key):
     client = openai.OpenAI(api_key=api_key)
 
@@ -140,56 +158,58 @@ def generate_questions(params, api_key):
         3. Format the output as a CSV.
         """
         
-        prompt_tokens = count_tokens(prompt)
-        if prompt_tokens >= MAX_COMPLETION_TOKENS:
-            prompt_chunks = chunk_input(prompt)
-            prompt = prompt_chunks[0]
-        
-        thread = client.beta.threads.create()
-        
-        message = client.beta.threads.messages.create(
-            thread_id=thread.id,
-            role="user",
-            content=prompt
-        )
-
-        run = client.beta.threads.runs.create(
-            thread_id=thread.id,
-            assistant_id=ASSISTANT_ID,
-            model=MODEL_NAME,
-            max_completion_tokens=MAX_COMPLETION_TOKENS
-        )
-
-        start_time = time.time()
-        max_run_time = 600  # 10 minutes in seconds
-
-        while run.status not in ["completed", "requires_action", "failed", "cancelled", "expired"]:
-            time.sleep(POLLING_INTERVAL)
-            run = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
+        try:
+            thread = client.beta.threads.create()
             
-            if time.time() - start_time > max_run_time:
-                st.warning("Run took too long. Retrying...")
-                break
+            message = client.beta.threads.messages.create(
+                thread_id=thread.id,
+                role="user",
+                content=prompt
+            )
 
-        if run.status == "completed":
-            messages = client.beta.threads.messages.list(thread_id=thread.id)
-            last_message = messages.data[0]  # Get the most recent message
-            csv_content = last_message.content[0].text.value
-            
-            if "incomplete" in csv_content.lower():
-                st.warning("The run was incomplete. Retrying for the remaining questions.")
-                retry_count += 1
-            else:
-                all_csv_content += csv_content
-                new_questions = csv_content.count("Question Text")
-                total_questions += new_questions
-                retry_count = 0  # Reset retry count on successful generation
-                st.success(f"Generated {new_questions} questions. Total: {total_questions}/{num_questions}")
-        elif run.status in ["failed", "cancelled", "expired"]:
-            st.error(f"Run {run.status}. Retrying...")
+            run = client.beta.threads.runs.create(
+                thread_id=thread.id,
+                assistant_id=ASSISTANT_ID,
+                model=MODEL_NAME
+            )
+
+            start_time = time.time()
+
+            while True:
+                time.sleep(POLLING_INTERVAL)
+                run = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
+                
+                if run.status == "completed":
+                    messages = client.beta.threads.messages.list(thread_id=thread.id)
+                    last_message = messages.data[0]  # Get the most recent message
+                    csv_content = last_message.content[0].text.value
+                    
+                    all_csv_content += csv_content
+                    new_questions = csv_content.count("Question Text")
+                    total_questions += new_questions
+                    retry_count = 0  # Reset retry count on successful generation
+                    st.success(f"Generated {new_questions} questions. Total: {total_questions}/{num_questions}")
+                    break
+                elif run.status in ["failed", "cancelled", "expired"]:
+                    st.error(f"Run {run.status}. Error: {run.last_error}. Retrying...")
+                    retry_count += 1
+                    break
+                elif run.status == "requires_action":
+                    st.error("Run requires action. This shouldn't happen with our current setup. Retrying...")
+                    retry_count += 1
+                    break
+                
+                if time.time() - start_time > MAX_RUN_TIME:
+                    st.warning("Run took too long. Cancelling and retrying...")
+                    client.beta.threads.runs.cancel(thread_id=thread.id, run_id=run.id)
+                    retry_count += 1
+                    break
+
+        except openai.APIError as e:
+            st.error(f"OpenAI API error: {str(e)}")
             retry_count += 1
-        elif run.status == "requires_action":
-            st.error("Run requires action. This shouldn't happen with our current setup. Retrying...")
+        except Exception as e:
+            st.error(f"An unexpected error occurred: {str(e)}")
             retry_count += 1
 
         if retry_count >= MAX_RETRIES:
