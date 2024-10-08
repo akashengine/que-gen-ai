@@ -260,7 +260,7 @@ def generate_questions(params, api_key):
     return all_csv_content
 
 def main():
-   st.title("Drishti QueAI")
+    st.title("Drishti QueAI")
     st.markdown(CSS, unsafe_allow_html=True)
     api_key = st.text_input("Enter your API Key:", type="password")
 
