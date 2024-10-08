@@ -107,12 +107,24 @@ def process_csv_content(csv_content, language):
     if "Not found in knowledge text" in csv_content:
         return None
 
-    csv_start = csv_content.find("Subject,Topic,")
-    if csv_start != -1:
-        csv_content = csv_content[csv_start:]
+    # Split the content into lines
+    lines = csv_content.strip().split('\n')
+
+    # Identify unique headers
+    headers = []
+    data_lines = []
+    for line in lines:
+        if line.startswith("Subject,Topic,"):
+            if line not in headers:
+                headers.append(line)
+        else:
+            data_lines.append(line)
+
+    # Use the first header and all data lines
+    processed_content = headers[0] + '\n' + '\n'.join(data_lines)
 
     try:
-        df = pd.read_csv(io.StringIO(csv_content), skipinitialspace=True)
+        df = pd.read_csv(io.StringIO(processed_content), skipinitialspace=True)
     except pd.errors.ParserError:
         st.error("Error parsing CSV data. The assistant's response may not be in the correct format.")
         return None
@@ -248,7 +260,7 @@ def generate_questions(params, api_key):
     return all_csv_content
 
 def main():
-    st.title("Drishti QueAI")
+   st.title("Drishti QueAI")
     st.markdown(CSS, unsafe_allow_html=True)
     api_key = st.text_input("Enter your API Key:", type="password")
 
@@ -265,12 +277,8 @@ def main():
         csv_content = generate_questions(params, api_key)
         
         if csv_content:
-            # Add header row to the CSV content
-            header = "Subject,Topic,Question Type,Question Text (English),Question Text (Hindi),Option A (English),Option B (English),Option C (English),Option D (English),Option A (Hindi),Option B (Hindi),Option C (Hindi),Option D (Hindi),Correct Answer (English),Correct Answer (Hindi),Explanation (English),Explanation (Hindi),Difficulty Level,Language,Source PDF Name,Source Page Number,Original Question Number,Year of Original Question\n"
-            csv_content_with_header = header + csv_content
-            
-            # Process the entire CSV content
-            df = process_csv_content(csv_content_with_header, params[7])  # params[7] should be the language parameter
+            # Process the entire CSV content without adding an extra header
+            df = process_csv_content(csv_content, params[7])  # params[7] should be the language parameter
             
             if df is not None and not df.empty:
                 st.dataframe(df)
