@@ -188,6 +188,7 @@ def process_csv_content(csv_content, language):
     return df[columns_to_show]
 
 
+
 def generate_questions_batch(params, api_key, batch_size, language):
     client = openai.OpenAI(api_key=api_key)
     subjects, topics, sub_topic, selected_pdfs, keywords, question_types, num_questions, difficulty_levels, language_param, question_source, year_range = params
@@ -302,6 +303,7 @@ Follow all the detailed steps provided previously to generate high-quality exam 
     st.error(f"Failed to generate questions after {MAX_RETRIES} attempts.")
     return None
 
+# Handling parallel requests to the assistant API for faster output generation
 def generate_questions(params, api_key):
     subjects, topics, sub_topic, selected_pdfs, keywords, question_types, num_questions, difficulty_levels, language, question_source, year_range = params
 
@@ -331,8 +333,8 @@ def generate_questions(params, api_key):
         batches.append(current_batch_size)
         remaining_questions -= current_batch_size
 
-    # Use ThreadPoolExecutor for parallel execution
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+    # Use ThreadPoolExecutor for parallel execution (up to 10 requests)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         futures = []
         for batch_size in batches:
             future = executor.submit(generate_questions_batch, params, api_key, batch_size, language)
