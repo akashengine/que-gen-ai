@@ -3,6 +3,7 @@ import time
 import pandas as pd
 import io
 import streamlit as st
+import tiktoken  # Importing the tiktoken library for token counting
 from subject_data import SUBJECTS, TOPICS, PDF_NAMES
 
 # Constants
@@ -102,17 +103,17 @@ def validate_api_key(api_key):
         st.error("Invalid API key")
         return False
 
-# Function to count tokens
+# Function to count tokens using tiktoken
 def count_tokens(text, model="gpt-4o"):
-    enc = openai.api.tokenizer.get_encoding(model)
-    return len(enc.encode(text))
+    encoding = tiktoken.encoding_for_model(model)  # Using tiktoken for the correct model
+    return len(encoding.encode(text))
 
 # Function to chunk input data if needed
 def chunk_input(text, max_tokens=MAX_COMPLETION_TOKENS):
-    enc = openai.api.tokenizer.get_encoding("gpt-4o")
-    tokens = enc.encode(text)
+    encoding = tiktoken.encoding_for_model("gpt-4o")
+    tokens = encoding.encode(text)
     chunks = [tokens[i:i+max_tokens] for i in range(0, len(tokens), max_tokens)]
-    return [" ".join(enc.decode(chunk)) for chunk in chunks]
+    return [" ".join(encoding.decode(chunk)) for chunk in chunks]
 
 # Generate questions with continuous runs
 def generate_questions(params, api_key):
@@ -219,3 +220,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
