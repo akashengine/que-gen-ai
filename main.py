@@ -1,121 +1,29 @@
 import streamlit as st
-import pandas as pd
-import io
-import time
-import random
-from openai import OpenAI, AssistantEventHandler
+from openai import OpenAI
 from typing_extensions import override
-from subject_data import SUBJECTS, TOPICS, PDF_NAMES
-
-# Constants
-ASSISTANT_ID = "asst_WejSQNw2pN2DRnUOXpU3vMeX"
-
-# Inspirational quotes
-QUOTES = [
-    "Every question you tackle brings you closer to success.",
-    "Knowledge is the key; perseverance unlocks the door.",
-    "In the journey of learning, curiosity is your best companion.",
-    "Today's effort is tomorrow's excellence.",
-    "Embrace the challenge; it's shaping your future.",
-    "Small steps lead to big achievements in UPSC preparation.",
-    "Your dedication today paves the way for tomorrow's success.",
-    "Each question mastered is a step towards your goal.",
-    "In the world of UPSC, consistency is the true key to success.",
-    "Challenge your limits, expand your knowledge, achieve your dreams."
-]
-
-# CSS styles
-CSS = """
-<style>
-.stApp {
-    background-color: #1E1E1E;
-    color: #FFFFFF;
-}
-.stDataFrame {
-    font-size: 14px;
-    width: 100%;
-    overflow-x: auto;
-}
-.stDataFrame td {
-    background-color: #2D2D2D;
-    color: white;
-}
-.stDataFrame tr:nth-child(even) {
-    background-color: #353535;
-}
-.stProgress .st-bo {
-    background-color: #4CAF50;
-}
-.stButton>button {
-    background-color: #4CAF50;
-    color: white;
-}
-.stSelectbox>div>div, .stMultiselect>div>div {
-    background-color: #2D2D2D;
-    color: white;
-}
-.stTextInput>div>div>input {
-    background-color: #2D2D2D;
-    color: white;
-}
-</style>
-"""
+from openai import AssistantEventHandler
 
 class EventHandler(AssistantEventHandler):
+    def __init__(self):
+        self.generated_rows = []
+        self.current_row = []
+
     @override
     def on_text_created(self, text) -> None:
-        st.text_area("Generated Text:", value=text, height=200, key=f"{random.randint(0, 10000)}")
-        st.experimental_rerun()
+        if text.strip():
+            self.current_row.append(text.strip())
+        if len(self.current_row) == 23:  # Number of columns in our CSV
+            self.generated_rows.append(",".join(self.current_row))
+            self.current_row = []
+            st.text_area("Generated Questions:", value="\n".join(self.generated_rows), height=400, key=f"generated_questions_{len(self.generated_rows)}")
+            st.experimental_rerun()
 
     @override
     def on_message_done(self, message) -> None:
-        st.text_area("Final Output:", value=message.content[0].text.value, height=200, key=f"{random.randint(0, 10000)}")
+        if self.current_row:
+            self.generated_rows.append(",".join(self.current_row))
+        st.text_area("Final Output:", value="\n".join(self.generated_rows), height=400, key="final_output")
         st.experimental_rerun()
-
-
-def get_random_quote():
-    return random.choice(QUOTES)
-
-
-def create_sidebar():
-    st.sidebar.title("Question Generator")
-    subjects = st.sidebar.multiselect("Select Subject(s)", SUBJECTS)
-    
-    all_topics = []
-    for subject in subjects:
-        all_topics.extend(TOPICS.get(subject, []))
-    topics = st.sidebar.multiselect("Select Topic(s)", list(set(all_topics)))
-    
-    sub_topic = st.sidebar.text_input("Sub-Topic", "General")
-    
-    pdf_options = []
-    for subject in subjects:
-        subject_pdfs = PDF_NAMES.get(subject, {})
-        if isinstance(subject_pdfs, dict):
-            for topic in topics:
-                pdf_options.extend(subject_pdfs.get(topic, []))
-        else:
-            pdf_options.extend(subject_pdfs)
-    selected_pdfs = st.sidebar.multiselect("Select PDF(s)", list(set(pdf_options)))
-    
-    question_types = st.sidebar.multiselect("Question Type(s)", ["MCQ", "Fill in the Blanks", "Short Answer", "Descriptive/Essay", "Match the Following", "True/False"])
-    num_questions = st.sidebar.number_input("Number of Questions", min_value=1, max_value=250, value=5)
-    difficulty_levels = st.sidebar.multiselect("Difficulty Level(s)", ["Easy", "Medium", "Hard"])
-    language = st.sidebar.selectbox("Language", ["English", "Hindi", "Both"])
-    question_source = st.sidebar.selectbox("Question Source", ["Rewrite existing", "Create new"])
-    year_range = st.sidebar.slider("Year Range", 1947, 2024, (2000, 2024))
-    
-    return subjects, topics, sub_topic, selected_pdfs, question_types, num_questions, difficulty_levels, language, question_source, year_range
-
-
-def validate_api_key(api_key):
-    try:
-        client = OpenAI(api_key=api_key)
-        client.models.list()
-        return True
-    except Exception as e:
-        return False
-
 
 def generate_questions(params, api_key):
     subjects, topics, sub_topic, selected_pdfs, question_types, num_questions, difficulty_levels, language, question_source, year_range = params
@@ -154,18 +62,21 @@ def generate_questions(params, api_key):
         7. Format the output as a CSV with the following headers:
            Subject,Topic,Sub-Topic,Question Type,Question Text (English),Question Text (Hindi),Option A (English),Option B (English),Option C (English),Option D (English),Option A (Hindi),Option B (Hindi),Option C (Hindi),Option D (Hindi),Correct Answer (English),Correct Answer (Hindi),Explanation (English),Explanation (Hindi),Difficulty Level,Language,Source PDF Name,Source Page Number,Original Question Number,Year of Original Question
 
-        Important: Do not generate any text before or after the CSV content. The response should contain only the CSV data.
+        Important: Generate the questions one by one, streaming each row as it's created. Do not generate any text before or after the CSV content. The response should contain only the CSV data.
         """
     )
 
-    with client.beta.threads.runs.stream(
+    event_handler = EventHandler()
+
+    with client.beta.threads.runs.create_and_stream(
         thread_id=thread.id,
         assistant_id=ASSISTANT_ID,
-        instructions="Streaming output row by row.",
-        event_handler=EventHandler()
+        instructions="Stream the generated questions row by row.",
+        event_handler=event_handler
     ) as stream:
         stream.until_done()
 
+    return event_handler.generated_rows
 
 def main():
     st.set_page_config(page_title="Drishti QueAI", page_icon="📚", layout="wide")
@@ -202,13 +113,26 @@ def main():
             time.sleep(0.5)
 
         try:
-            generate_questions(params, api_key)
+            generated_rows = generate_questions(params, api_key)
+            st.success(f"Generated {len(generated_rows)} questions successfully!")
+            
+            # Display the generated questions in a DataFrame
+            df = pd.read_csv(io.StringIO("\n".join(generated_rows)))
+            st.dataframe(df)
+            
+            # Provide a download button for the CSV
+            csv = df.to_csv(index=False)
+            st.download_button(
+                label="Download CSV",
+                data=csv,
+                file_name="generated_questions.csv",
+                mime="text/csv",
+            )
         except Exception as e:
             st.error(f"An error occurred: {str(e)}")
         finally:
             progress_bar.empty()
             status_text.empty()
-
 
 if __name__ == "__main__":
     main()
