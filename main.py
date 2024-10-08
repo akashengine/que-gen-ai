@@ -128,12 +128,9 @@ def process_csv_content(csv_content, language):
     # Ensure all expected columns are present
     expected_columns = [
         "Subject", "Topic", "Sub-Topic", "Question Type", "Question Text (English)", 
-        "Question Text (Hindi)", "Option A (English)", "Option B (English)", 
-        "Option C (English)", "Option D (English)", "Option A (Hindi)", 
-        "Option B (Hindi)", "Option C (Hindi)", "Option D (Hindi)", 
-        "Correct Answer (English)", "Correct Answer (Hindi)", "Explanation (English)", 
-        "Explanation (Hindi)", "Difficulty Level", "Language", "Source PDF Name", 
-        "Source Page Number", "Original Question Number", "Year of Original Question"
+        "Option A (English)", "Option B (English)", "Option C (English)", "Option D (English)", 
+        "Correct Answer (English)", "Explanation (English)", "Difficulty Level", "Language", 
+        "Source PDF Name", "Source Page Number", "Original Question Number", "Year of Original Question"
     ]
     
     for col in expected_columns:
@@ -141,9 +138,7 @@ def process_csv_content(csv_content, language):
             df[col] = ""
     
     # Filter columns based on language selection
-    if language == "Hindi":
-        columns_to_show = [col for col in df.columns if "Hindi" in col or col not in ["Question Text (English)", "Option A (English)", "Option B (English)", "Option C (English)", "Option D (English)", "Correct Answer (English)", "Explanation (English)"]]
-    elif language == "English":
+    if language == "English":
         columns_to_show = [col for col in df.columns if "Hindi" not in col]
     else:  # Both
         columns_to_show = df.columns
@@ -181,8 +176,13 @@ def generate_questions(params, api_key):
         1. Use the specified PDFs as reference material.
         2. For each question, use the actual question number and page number from the referenced PDF.
         3. Format the output as a CSV with the following columns:
-           Subject,Topic,Sub-Topic,Question Type,Question Text (English),Question Text (Hindi),Option A (English),Option B (English),Option C (English),Option D (English),Option A (Hindi),Option B (Hindi),Option C (Hindi),Option D (Hindi),Correct Answer (English),Correct Answer (Hindi),Explanation (English),Explanation (Hindi),Difficulty Level,Language,Source PDF Name,Source Page Number,Original Question Number,Year of Original Question
+           Subject,Topic,Sub-Topic,Question Type,Question Text (English),Option A (English),Option B (English),Option C (English),Option D (English),Correct Answer (English),Explanation (English),Difficulty Level,Language,Source PDF Name,Source Page Number,Original Question Number,Year of Original Question
         4. Ensure each row is properly formatted as CSV, with values separated by commas and enclosed in double quotes if necessary.
+        5. Make sure to fill in all columns, especially the Correct Answer (English) column.
+        6. The Correct Answer (English) should be the full text of the correct option, not just the letter.
+        7. Ensure that the Difficulty Level matches the requested level(s).
+        8. The Year of Original Question should be within the specified year range.
+        9. Do not include a header row in the CSV output.
         """
         
         try:
@@ -213,7 +213,7 @@ def generate_questions(params, api_key):
                     
                     # Process CSV content
                     df = process_csv_content(csv_content, language)
-                    if df is not None:
+                    if df is not None and not df.empty:
                         all_csv_content += csv_content + "\n"  # Add newline to separate batches
                         new_questions = len(df)
                         total_questions += new_questions
@@ -269,10 +269,14 @@ def main():
         csv_content = generate_questions(params, api_key)
         
         if csv_content:
-            # Process the entire CSV content
-            df = process_csv_content(csv_content, params[7])  # params[7] should be the language parameter
+            # Add header row to the CSV content
+            header = "Subject,Topic,Sub-Topic,Question Type,Question Text (English),Option A (English),Option B (English),Option C (English),Option D (English),Correct Answer (English),Explanation (English),Difficulty Level,Language,Source PDF Name,Source Page Number,Original Question Number,Year of Original Question\n"
+            csv_content_with_header = header + csv_content
             
-            if df is not None:
+            # Process the entire CSV content
+            df = process_csv_content(csv_content_with_header, params[7])  # params[7] should be the language parameter
+            
+            if df is not None and not df.empty:
                 st.dataframe(df)
                 
                 csv_data = df.to_csv(index=False)
