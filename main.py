@@ -115,7 +115,7 @@ def process_csv_content(csv_content, language):
     for line in lines:
         if not header_line and ("Subject" in line and "Topic" in line):
             header_line = line
-        else:
+        elif line.strip():  # Only add non-empty lines
             data_lines.append(line)
 
     if not header_line:
@@ -125,7 +125,7 @@ def process_csv_content(csv_content, language):
     processed_content = header_line + '\n' + '\n'.join(data_lines)
 
     try:
-        df = pd.read_csv(io.StringIO(processed_content), skipinitialspace=True)
+        df = pd.read_csv(io.StringIO(processed_content), skipinitialspace=True, quotechar='"', escapechar='\\')
     except pd.errors.ParserError as e:
         st.error(f"Error parsing CSV data: {e}")
         return None
@@ -144,7 +144,15 @@ def process_csv_content(csv_content, language):
             df[col] = ""
 
     # Reorder columns to match expected order
-    df = df[expected_columns]
+    df = df.reindex(columns=expected_columns)
+
+    # Fill NaN values with empty strings
+    df = df.fillna("")
+
+    # Ensure numeric columns are of the correct type
+    numeric_columns = ["Source Page Number", "Original Question Number", "Year of Original Question"]
+    for col in numeric_columns:
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
 
     if language == "Hindi":
         columns_to_show = [col for col in df.columns if "Hindi" in col or col in ["Subject", "Topic", "Sub-Topic", "Question Type", "Difficulty Level", "Language", "Source PDF Name", "Source Page Number", "Original Question Number", "Year of Original Question"]]
@@ -285,7 +293,10 @@ def generate_questions(params, api_key):
     progress_bar = st.progress(0)
     status_placeholder = st.empty()
 
-    while total_questions < num_questions:
+    max_attempts = 10  # Maximum number of attempts to generate all questions
+    attempts = 0
+
+    while total_questions < num_questions and attempts < max_attempts:
         current_batch_size = min(num_questions - total_questions, batch_size)
         df = generate_questions_batch(params, api_key, current_batch_size, language)
         
@@ -304,6 +315,8 @@ def generate_questions(params, api_key):
             status_placeholder.success(f"Total questions generated: {total_questions}/{num_questions}")
         else:
             st.warning("A batch did not return any questions. Retrying...")
+        
+        attempts += 1
 
     if total_questions < num_questions:
         st.warning(f"Only {total_questions} unique questions could be generated out of the requested {num_questions}.")
