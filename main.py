@@ -5,6 +5,7 @@ import io
 import streamlit as st
 import tiktoken
 from subject_data import SUBJECTS, TOPICS, PDF_NAMES
+import csv
 
 # Constants
 ASSISTANT_ID = "asst_WejSQNw2pN2DRnUOXpU3vMeX"
@@ -107,6 +108,64 @@ def create_sidebar():
 
     return subjects, selected_pdfs, sub_topic, keywords, question_types, num_questions, difficulty_levels, language, question_source, year_range
 
+import openai
+import time
+import pandas as pd
+import io
+import streamlit as st
+import tiktoken
+from subject_data import SUBJECTS, TOPICS, PDF_NAMES
+import csv
+
+# Constants
+ASSISTANT_ID = "asst_WejSQNw2pN2DRnUOXpU3vMeX"
+MODEL_NAME = "gpt-4o"
+MAX_RETRIES = 3
+POLLING_INTERVAL = 2  # seconds
+MAX_RUN_TIME = 600  # 10 minutes in seconds
+
+def process_csv_content(csv_content, language):
+    # Check if the content is not found in knowledge text
+    if "Not found in knowledge text" in csv_content:
+        return None
+
+    # Remove any text before the actual CSV data
+    csv_start = csv_content.find("Subject,Topic,")
+    if csv_start != -1:
+        csv_content = csv_content[csv_start:]
+
+    # Read CSV content
+    try:
+        df = pd.read_csv(io.StringIO(csv_content))
+    except pd.errors.ParserError:
+        st.error("Error parsing CSV data. The assistant's response may not be in the correct format.")
+        return None
+    
+    # Ensure all expected columns are present
+    expected_columns = [
+        "Subject", "Topic", "Sub-Topic", "Question Type", "Question Text (English)", 
+        "Question Text (Hindi)", "Option A (English)", "Option B (English)", 
+        "Option C (English)", "Option D (English)", "Option A (Hindi)", 
+        "Option B (Hindi)", "Option C (Hindi)", "Option D (Hindi)", 
+        "Correct Answer (English)", "Correct Answer (Hindi)", "Explanation (English)", 
+        "Explanation (Hindi)", "Difficulty Level", "Language", "Source PDF Name", 
+        "Source Page Number", "Original Question Number", "Year of Original Question"
+    ]
+    
+    for col in expected_columns:
+        if col not in df.columns:
+            df[col] = ""
+    
+    # Filter columns based on language selection
+    if language == "Hindi":
+        columns_to_show = [col for col in df.columns if "Hindi" in col or col not in ["Question Text (English)", "Option A (English)", "Option B (English)", "Option C (English)", "Option D (English)", "Correct Answer (English)", "Explanation (English)"]]
+    elif language == "English":
+        columns_to_show = [col for col in df.columns if "Hindi" not in col]
+    else:  # Both
+        columns_to_show = df.columns
+
+    return df[columns_to_show]
+
 def generate_questions(params, api_key):
     client = openai.OpenAI(api_key=api_key)
 
@@ -137,7 +196,9 @@ def generate_questions(params, api_key):
         Instructions:
         1. Use the specified PDFs as reference material.
         2. For each question, use the actual question number and page number from the referenced PDF.
-        3. Format the output as a CSV.
+        3. Format the output as a CSV with the following columns:
+           Subject,Topic,Sub-Topic,Question Type,Question Text (English),Question Text (Hindi),Option A (English),Option B (English),Option C (English),Option D (English),Option A (Hindi),Option B (Hindi),Option C (Hindi),Option D (Hindi),Correct Answer (English),Correct Answer (Hindi),Explanation (English),Explanation (Hindi),Difficulty Level,Language,Source PDF Name,Source Page Number,Original Question Number,Year of Original Question
+        4. Ensure each row is properly formatted as CSV, with values separated by commas and enclosed in double quotes if necessary.
         """
         
         try:
@@ -166,11 +227,17 @@ def generate_questions(params, api_key):
                     last_message = messages.data[0]  # Get the most recent message
                     csv_content = last_message.content[0].text.value
                     
-                    all_csv_content += csv_content
-                    new_questions = csv_content.count("Question Text")
-                    total_questions += new_questions
-                    retry_count = 0  # Reset retry count on successful generation
-                    st.success(f"Generated {new_questions} questions. Total: {total_questions}/{num_questions}")
+                    # Process CSV content
+                    df = process_csv_content(csv_content, language)
+                    if df is not None:
+                        all_csv_content += csv_content + "\n"  # Add newline to separate batches
+                        new_questions = len(df)
+                        total_questions += new_questions
+                        retry_count = 0  # Reset retry count on successful generation
+                        st.success(f"Generated {new_questions} questions. Total: {total_questions}/{num_questions}")
+                    else:
+                        st.warning("No valid CSV content generated. Retrying...")
+                        retry_count += 1
                     break
                 elif run.status in ["failed", "cancelled", "expired"]:
                     st.error(f"Run {run.status}. Error: {run.last_error}. Retrying...")
@@ -200,11 +267,8 @@ def generate_questions(params, api_key):
 
     return all_csv_content
 
-# Main function
 def main():
     st.title("Drishti QueAI")
-    st.markdown(CSS, unsafe_allow_html=True)
-    
     api_key = st.text_input("Enter your API Key:", type="password")
 
     if not api_key:
@@ -221,11 +285,18 @@ def main():
         csv_content = generate_questions(params, api_key)
         
         if csv_content:
-            df = pd.read_csv(io.StringIO(csv_content))
-            st.dataframe(df)
+            # Process the entire CSV content
+            df = process_csv_content(csv_content, params[7])  # params[7] should be the language parameter
             
-            csv_data = df.to_csv(index=False)
-            st.download_button(label="Download CSV", data=csv_data, file_name="generated_questions.csv", mime="text/csv")
+            if df is not None:
+                st.dataframe(df)
+                
+                csv_data = df.to_csv(index=False)
+                st.download_button(label="Download CSV", data=csv_data, file_name="generated_questions.csv", mime="text/csv")
+            else:
+                st.error("Failed to process the generated questions. Please try again.")
+        else:
+            st.error("No questions were generated. Please try again.")
 
 if __name__ == "__main__":
     main()
