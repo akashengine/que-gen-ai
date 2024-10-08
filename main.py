@@ -82,7 +82,6 @@ def create_sidebar():
         all_topics.extend(TOPICS.get(subject, []))
 
     topics = st.sidebar.multiselect("Select Topic(s)", list(set(all_topics)))
-    sub_topic = st.sidebar.selectbox("Sub-Topic", topics if topics else ["General"])
 
     pdf_options = []
     for subject in subjects:
@@ -94,7 +93,7 @@ def create_sidebar():
             pdf_options.extend(subject_pdfs)
 
     selected_pdfs = st.sidebar.multiselect("Select PDF(s)", list(set(pdf_options)))
-    keywords = st.sidebar.text_input("Keywords", "Enter any keywords")
+    keywords = st.sidebar.text_input("Keywords", "")
     question_types = st.sidebar.multiselect("Question Type(s)", ["MCQ", "Fill in the Blanks", "Short Answer", "Descriptive/Essay", "Match the Following", "True/False"])
     num_questions = st.sidebar.number_input("Number of Questions", min_value=1, max_value=250, value=5)
     difficulty_levels = st.sidebar.multiselect("Difficulty Level(s)", ["Easy", "Medium", "Hard"])
@@ -102,7 +101,7 @@ def create_sidebar():
     question_source = st.sidebar.selectbox("Question Source", ["Rewrite existing", "Create new"])
     year_range = st.sidebar.slider("Year Range", 1947, 2024, (2000, 2024))
 
-    return subjects, selected_pdfs, sub_topic, keywords, question_types, num_questions, difficulty_levels, language, question_source, year_range
+    return subjects, topics, selected_pdfs, keywords, question_types, num_questions, difficulty_levels, language, question_source, year_range
 
 def process_csv_content(csv_content, language):
     if "Not found in knowledge text" in csv_content:
@@ -119,7 +118,7 @@ def process_csv_content(csv_content, language):
         return None
     
     expected_columns = [
-        "Subject", "Topic", "Sub-Topic", "Question Type", "Question Text (English)", 
+        "Subject", "Topic", "Question Type", "Question Text (English)", 
         "Question Text (Hindi)", "Option A (English)", "Option B (English)", 
         "Option C (English)", "Option D (English)", "Option A (Hindi)", 
         "Option B (Hindi)", "Option C (Hindi)", "Option D (Hindi)", 
@@ -144,8 +143,9 @@ def process_csv_content(csv_content, language):
 def generate_questions(params, api_key):
     client = openai.OpenAI(api_key=api_key)
 
-    subjects, selected_pdfs, sub_topic, keywords, question_types, num_questions, difficulty_levels, language, question_source, year_range = params
+    subjects, topics, selected_pdfs, keywords, question_types, num_questions, difficulty_levels, language, question_source, year_range = params
     subjects_text = ", ".join(subjects) if subjects else "No specific subject selected"
+    topics_text = ", ".join(topics) if topics else "No specific topic selected"
     pdf_text = ", ".join(selected_pdfs) if selected_pdfs else "No specific PDF selected"
     question_types_text = ", ".join(question_types)
     difficulty_levels_text = ", ".join(difficulty_levels)
@@ -159,7 +159,7 @@ def generate_questions(params, api_key):
         prompt = f"""
         Generate {remaining_questions} questions based on the following parameters:
         • Subjects: {subjects_text}
-        • Sub-Topic: {sub_topic}
+        • Topics: {topics_text}
         • Keywords: {keywords}
         • Question Type(s): {question_types_text}
         • Difficulty Level(s): {difficulty_levels_text}
@@ -172,7 +172,7 @@ def generate_questions(params, api_key):
         1. Use the specified PDFs as reference material.
         2. For each question, use the actual question number and page number from the referenced PDF.
         3. Format the output as a CSV with the following columns:
-           Subject,Topic,Sub-Topic,Question Type,Question Text (English),Question Text (Hindi),Option A (English),Option B (English),Option C (English),Option D (English),Option A (Hindi),Option B (Hindi),Option C (Hindi),Option D (Hindi),Correct Answer (English),Correct Answer (Hindi),Explanation (English),Explanation (Hindi),Difficulty Level,Language,Source PDF Name,Source Page Number,Original Question Number,Year of Original Question
+           Subject,Topic,Question Type,Question Text (English),Question Text (Hindi),Option A (English),Option B (English),Option C (English),Option D (English),Option A (Hindi),Option B (Hindi),Option C (Hindi),Option D (Hindi),Correct Answer (English),Correct Answer (Hindi),Explanation (English),Explanation (Hindi),Difficulty Level,Language,Source PDF Name,Source Page Number,Original Question Number,Year of Original Question
         4. Ensure each row is properly formatted as CSV, with values separated by commas and enclosed in double quotes if necessary.
         5. Make sure to fill in all columns, especially the Correct Answer (English) column.
         6. The Correct Answer (English) should be the full text of the correct option, not just the letter.
@@ -267,7 +267,7 @@ def main():
         
         if csv_content:
             # Add header row to the CSV content
-            header = "Subject,Topic,Sub-Topic,Question Type,Question Text (English),Question Text (Hindi),Option A (English),Option B (English),Option C (English),Option D (English),Option A (Hindi),Option B (Hindi),Option C (Hindi),Option D (Hindi),Correct Answer (English),Correct Answer (Hindi),Explanation (English),Explanation (Hindi),Difficulty Level,Language,Source PDF Name,Source Page Number,Original Question Number,Year of Original Question\n"
+            header = "Subject,Topic,Question Type,Question Text (English),Question Text (Hindi),Option A (English),Option B (English),Option C (English),Option D (English),Option A (Hindi),Option B (Hindi),Option C (Hindi),Option D (Hindi),Correct Answer (English),Correct Answer (Hindi),Explanation (English),Explanation (Hindi),Difficulty Level,Language,Source PDF Name,Source Page Number,Original Question Number,Year of Original Question\n"
             csv_content_with_header = header + csv_content
             
             # Process the entire CSV content
