@@ -7,6 +7,8 @@ import tiktoken
 from subject_data import SUBJECTS, TOPICS, PDF_NAMES
 import csv
 
+import concurrent.futures  # For threading (if needed)
+
 # Constants
 ASSISTANT_ID = "asst_WejSQNw2pN2DRnUOXpU3vMeX"
 MAX_COMPLETION_TOKENS = 16384
@@ -163,15 +165,22 @@ def generate_questions(params, api_key):
     difficulty_levels_text = ", ".join(difficulty_levels)
 
     total_questions = 0
-    all_csv_content = ""
+    cumulative_df = pd.DataFrame()
+    dataframe_placeholder = st.empty()
     retry_count = 0
 
-    batch_size = 5  # Number of questions to generate per batch
+    # Adjust batch size based on total number of questions
+    if num_questions >= 500:
+        batch_size = 50
+    elif num_questions >= 100:
+        batch_size = 20
+    else:
+        batch_size = 5
 
     while total_questions < num_questions and retry_count < MAX_RETRIES:
         remaining_questions = min(num_questions - total_questions, batch_size)
         prompt = f"""
-Generate {remaining_questions} questions based on the following parameters:
+Generate {remaining_questions} unique questions based on the following parameters:
 • Subjects: {subjects_text}
 • Topics: {topics_text}
 • Keywords: {keywords}
@@ -193,7 +202,8 @@ Instructions:
 7. Ensure that the Difficulty Level matches the requested level(s).
 8. The Year of Original Question should be within the specified year range.
 9. Do not include a header row in the CSV output.
-10. Make sure to provide detailed explanation in the Explanation (English) field and also explain why other options are not suitable for this.
+10. Provide detailed explanations in the Explanation (English) field, at least 2-3 paragraphs, and explain why other options are not suitable.
+11. Ensure that the generated questions are unique and do not duplicate any previous questions.
 """
 
         try:
@@ -225,15 +235,16 @@ Instructions:
                     # Process CSV content
                     df = process_csv_content(csv_content, language)
                     if df is not None and not df.empty:
-                        # Display the dataframe for the current batch
-                        st.write(f"Generated {len(df)} questions:")
-                        st.dataframe(df)
-
-                        # Save the data
-                        all_csv_content += csv_content + "\n"  # Add newline to separate batches
-                        new_questions = len(df)
-                        total_questions += new_questions
-                        retry_count = 0  # Reset retry count on successful generation
+                        # Append to cumulative dataframe
+                        cumulative_df = pd.concat([cumulative_df, df], ignore_index=True)
+                        # Remove duplicates
+                        cumulative_df.drop_duplicates(subset=['Question Text (English)'], inplace=True)
+                        # Update total_questions
+                        total_questions = len(cumulative_df)
+                        # Update the displayed dataframe
+                        dataframe_placeholder.dataframe(cumulative_df)
+                        # Reset retry count
+                        retry_count = 0
                         st.success(f"Total questions generated: {total_questions}/{num_questions}")
                     else:
                         st.warning("No valid CSV content generated. Retrying...")
@@ -265,7 +276,7 @@ Instructions:
             st.error(f"Failed to generate questions after {MAX_RETRIES} attempts. Please try again later.")
             break
 
-    return all_csv_content
+    return cumulative_df
 
 def main():
     st.title("Drishti QueAI")
@@ -282,19 +293,13 @@ def main():
     params = create_sidebar()
 
     if st.sidebar.button("Generate Questions"):
-        csv_content = generate_questions(params, api_key)
+        cumulative_df = generate_questions(params, api_key)
 
-        if csv_content:
-            # Process the entire CSV content without adding an extra header
-            df = process_csv_content(csv_content, params[7])  # params[7] should be the language parameter
+        if cumulative_df is not None and not cumulative_df.empty:
+            st.success("All questions generated successfully.")
 
-            if df is not None and not df.empty:
-                st.success("All questions generated successfully.")
-
-                csv_data = df.to_csv(index=False)
-                st.download_button(label="Download CSV", data=csv_data, file_name="generated_questions.csv", mime="text/csv")
-            else:
-                st.error("Failed to process the generated questions. Please try again.")
+            csv_data = cumulative_df.to_csv(index=False)
+            st.download_button(label="Download CSV", data=csv_data, file_name="generated_questions.csv", mime="text/csv")
         else:
             st.error("No questions were generated. Please try again.")
 
