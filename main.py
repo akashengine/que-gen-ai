@@ -6,7 +6,6 @@ import streamlit as st
 import tiktoken
 from subject_data import SUBJECTS, TOPICS, PDF_NAMES
 import csv
-import random
 
 # Constants
 ASSISTANT_ID = "asst_WejSQNw2pN2DRnUOXpU3vMeX"
@@ -16,20 +15,6 @@ MAX_TOKENS = 128000
 MAX_RETRIES = 3
 POLLING_INTERVAL = 2  # seconds
 MAX_RUN_TIME = 600  # 10 minutes in seconds
-
-# Inspirational quotes
-QUOTES = [
-    "Every question you tackle brings you closer to success.",
-    "Knowledge is the key; perseverance unlocks the door.",
-    "In the journey of learning, curiosity is your best companion.",
-    "Today's effort is tomorrow's excellence.",
-    "Embrace the challenge; it's shaping your future.",
-    "Small steps lead to big achievements in UPSC preparation.",
-    "Your dedication today paves the way for tomorrow's success.",
-    "Each question mastered is a step towards your goal.",
-    "In the world of UPSC, consistency is the true key to success.",
-    "Challenge your limits, expand your knowledge, achieve your dreams."
-]
 
 # CSS Styling
 CSS = """
@@ -68,6 +53,7 @@ CSS = """
 </style>
 """
 
+# Function to validate API Key
 def validate_api_key(api_key):
     try:
         client = openai.OpenAI(api_key=api_key)
@@ -77,16 +63,19 @@ def validate_api_key(api_key):
         st.error("Invalid API key")
         return False
 
+# Function to count tokens using tiktoken
 def count_tokens(text, model="gpt-4o"):
     encoding = tiktoken.encoding_for_model(model)
     return len(encoding.encode(text))
 
+# Function to chunk input data if needed
 def chunk_input(text, max_tokens=MAX_COMPLETION_TOKENS):
     encoding = tiktoken.encoding_for_model("gpt-4o")
     tokens = encoding.encode(text)
     chunks = [tokens[i:i+max_tokens] for i in range(0, len(tokens), max_tokens)]
     return [encoding.decode(chunk) for chunk in chunks]
 
+# Sidebar for input parameters
 def create_sidebar():
     st.sidebar.title("Question Generator")
 
@@ -120,30 +109,44 @@ def create_sidebar():
     return subjects, selected_pdfs, sub_topic, keywords, question_types, num_questions, difficulty_levels, language, question_source, year_range
 
 def process_csv_content(csv_content, language):
+    # Check if the content is not found in knowledge text
     if "Not found in knowledge text" in csv_content:
         return None
 
+    # Remove any text before the actual CSV data
     csv_start = csv_content.find("Subject,Topic,")
     if csv_start != -1:
         csv_content = csv_content[csv_start:]
 
+    # Read CSV content
     try:
         df = pd.read_csv(io.StringIO(csv_content))
     except pd.errors.ParserError:
         st.error("Error parsing CSV data. The assistant's response may not be in the correct format.")
         return None
-    
+
+    # Ensure all expected columns are present
     expected_columns = [
         "Subject", "Topic", "Sub-Topic", "Question Type", "Question Text (English)", 
+        "Question Text (Hindi)", "Option A (English)", "Option B (English)", 
+        "Option C (English)", "Option D (English)", "Option A (Hindi)", 
+        "Option B (Hindi)", "Option C (Hindi)", "Option D (Hindi)", 
+        "Correct Answer (English)", "Correct Answer (Hindi)", "Explanation (English)", 
+        "Explanation (Hindi)", "Difficulty Level", "Language", "Source PDF Name", 
+        "Source Page Number", "Original Question Number", "Year of Original Question"
         "Option A (English)", "Option B (English)", "Option C (English)", "Option D (English)", 
         "Correct Answer (English)", "Explanation (English)", "Difficulty Level", "Language", 
         "Source PDF Name", "Source Page Number", "Original Question Number", "Year of Original Question"
     ]
-    
+
     for col in expected_columns:
         if col not in df.columns:
             df[col] = ""
-    
+
+    # Filter columns based on language selection
+    if language == "Hindi":
+        columns_to_show = [col for col in df.columns if "Hindi" in col or col not in ["Question Text (English)", "Option A (English)", "Option B (English)", "Option C (English)", "Option D (English)", "Correct Answer (English)", "Explanation (English)"]]
+    elif language == "English":
     if language == "English":
         columns_to_show = [col for col in df.columns if "Hindi" not in col]
     else:  # Both
@@ -163,7 +166,7 @@ def generate_questions(params, api_key):
     total_questions = 0
     all_csv_content = ""
     retry_count = 0
-    
+
     while total_questions < num_questions and retry_count < MAX_RETRIES:
         remaining_questions = num_questions - total_questions
         prompt = f"""
@@ -177,11 +180,11 @@ def generate_questions(params, api_key):
         • Question Source: {question_source}
         • Year Range: {year_range[0]} to {year_range[1]}
         • Reference Material: {pdf_text}
-
         Instructions:
         1. Use the specified PDFs as reference material.
         2. For each question, use the actual question number and page number from the referenced PDF.
         3. Format the output as a CSV with the following columns:
+           Subject,Topic,Sub-Topic,Question Type,Question Text (English),Question Text (Hindi),Option A (English),Option B (English),Option C (English),Option D (English),Option A (Hindi),Option B (Hindi),Option C (Hindi),Option D (Hindi),Correct Answer (English),Correct Answer (Hindi),Explanation (English),Explanation (Hindi),Difficulty Level,Language,Source PDF Name,Source Page Number,Original Question Number,Year of Original Question
            Subject,Topic,Sub-Topic,Question Type,Question Text (English),Option A (English),Option B (English),Option C (English),Option D (English),Correct Answer (English),Explanation (English),Difficulty Level,Language,Source PDF Name,Source Page Number,Original Question Number,Year of Original Question
         4. Ensure each row is properly formatted as CSV, with values separated by commas and enclosed in double quotes if necessary.
         5. Make sure to fill in all columns, especially the Correct Answer (English) column.
@@ -190,10 +193,10 @@ def generate_questions(params, api_key):
         8. The Year of Original Question should be within the specified year range.
         9. Do not include a header row in the CSV output.
         """
-        
+
         try:
             thread = client.beta.threads.create()
-            
+
             message = client.beta.threads.messages.create(
                 thread_id=thread.id,
                 role="user",
@@ -211,14 +214,15 @@ def generate_questions(params, api_key):
             while True:
                 time.sleep(POLLING_INTERVAL)
                 run = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
-                
+
                 if run.status == "completed":
                     messages = client.beta.threads.messages.list(thread_id=thread.id)
                     last_message = messages.data[0]  # Get the most recent message
                     csv_content = last_message.content[0].text.value
-                    
+
                     # Process CSV content
                     df = process_csv_content(csv_content, language)
+                    if df is not None:
                     if df is not None and not df.empty:
                         all_csv_content += csv_content + "\n"  # Add newline to separate batches
                         new_questions = len(df)
@@ -237,7 +241,7 @@ def generate_questions(params, api_key):
                     st.error("Run requires action. This shouldn't happen with our current setup. Retrying...")
                     retry_count += 1
                     break
-                
+
                 if time.time() - start_time > MAX_RUN_TIME:
                     st.warning("Run took too long. Cancelling and retrying...")
                     client.beta.threads.runs.cancel(thread_id=thread.id, run_id=run.id)
@@ -257,12 +261,8 @@ def generate_questions(params, api_key):
 
     return all_csv_content
 
-def get_random_quote():
-    return random.choice(QUOTES)
-
 def main():
     st.title("Drishti QueAI")
-    st.markdown(CSS, unsafe_allow_html=True)
     api_key = st.text_input("Enter your API Key:", type="password")
 
     if not api_key:
@@ -276,39 +276,27 @@ def main():
     params = create_sidebar()
 
     if st.sidebar.button("Generate Questions"):
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-
-        # Display loading bar and random quotes for 3 seconds
-        start_time = time.time()
-        while time.time() - start_time < 3:  # Keep the loading bar for only 3 seconds
-            progress_bar.progress(min(int((time.time() - start_time) / 3 * 100), 100))
-            status_text.text(get_random_quote())
-            time.sleep(0.1)  # Reduced sleep time for smoother updates
-
         csv_content = generate_questions(params, api_key)
-        
+
         if csv_content:
             # Add header row to the CSV content
             header = "Subject,Topic,Sub-Topic,Question Type,Question Text (English),Option A (English),Option B (English),Option C (English),Option D (English),Correct Answer (English),Explanation (English),Difficulty Level,Language,Source PDF Name,Source Page Number,Original Question Number,Year of Original Question\n"
             csv_content_with_header = header + csv_content
             
             # Process the entire CSV content
+            df = process_csv_content(csv_content, params[7])  # params[7] should be the language parameter
             df = process_csv_content(csv_content_with_header, params[7])  # params[7] should be the language parameter
-            
+
+            if df is not None:
             if df is not None and not df.empty:
                 st.dataframe(df)
-                
+
                 csv_data = df.to_csv(index=False)
                 st.download_button(label="Download CSV", data=csv_data, file_name="generated_questions.csv", mime="text/csv")
             else:
                 st.error("Failed to process the generated questions. Please try again.")
         else:
             st.error("No questions were generated. Please try again.")
-
-        # Clear the progress bar and status text after completion
-        progress_bar.empty()
-        status_text.empty()
 
 if __name__ == "__main__":
     main()
