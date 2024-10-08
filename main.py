@@ -171,13 +171,12 @@ def generate_questions(params, api_key):
 
     event_handler = EventHandler()
 
-    with client.beta.threads.runs.create_and_stream(
+    client.beta.threads.runs.create_and_stream(
         thread_id=thread.id,
         assistant_id=ASSISTANT_ID,
         instructions="Streaming output row by row.",
         event_handler=event_handler
-    ) as stream:
-        stream.until_done()
+    )
 
 
 def main():
