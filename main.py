@@ -68,13 +68,25 @@ class EventHandler(AssistantEventHandler):
 
     @override
     def on_text_created(self, text) -> None:
-        if text.strip():
-            self.current_row.append(text.strip())
+        if text.text.strip():
+            self.current_row.append(text.text.strip())
         if len(self.current_row) == 23:  # Number of columns in our CSV
             self.generated_rows.append(",".join(self.current_row))
             self.current_row = []
             st.text_area("Generated Questions:", value="\n".join(self.generated_rows), height=400, key=f"generated_questions_{len(self.generated_rows)}")
             st.experimental_rerun()
+
+    @override
+    def on_text_delta(self, delta, snapshot) -> None:
+        pass  # We're not using this for now, but it's required by the interface
+
+    @override
+    def on_tool_call_created(self, tool_call) -> None:
+        pass  # We're not using this for now, but it's required by the interface
+
+    @override
+    def on_tool_call_delta(self, delta, snapshot) -> None:
+        pass  # We're not using this for now, but it's required by the interface
 
     @override
     def on_message_done(self, message) -> None:
@@ -152,10 +164,15 @@ def generate_questions(params, api_key):
 
     event_handler = EventHandler()
 
-    with client.beta.threads.runs.create_and_stream(
+    run = client.beta.threads.runs.create(
         thread_id=thread.id,
         assistant_id=ASSISTANT_ID,
-        instructions="Stream the generated questions row by row.",
+        instructions="Stream the generated questions row by row."
+    )
+
+    with client.beta.threads.runs.stream(
+        thread_id=thread.id,
+        run_id=run.id,
         event_handler=event_handler
     ) as stream:
         stream.until_done()
