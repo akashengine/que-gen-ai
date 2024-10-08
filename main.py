@@ -175,13 +175,6 @@ def process_csv_content(csv_content, language):
     else:  # Both
         columns_to_show = df.columns
 
-    # Check if required columns are present for the selected language
-    required_columns = ["Subject", "Topic", "Question Type", "Difficulty Level"]
-    missing_required = [col for col in required_columns if col not in columns_to_show]
-    if missing_required:
-        st.error(f"Required columns are missing for the selected language: {', '.join(missing_required)}")
-        return None
-
     # Validate that each row has a question text and at least two options
     invalid_rows = df[
         (df["Question Text (English)"].isna() & df["Question Text (Hindi)"].isna()) |
@@ -193,6 +186,7 @@ def process_csv_content(csv_content, language):
         df = df.drop(invalid_rows.index)
 
     return df[columns_to_show]
+
 
 def generate_questions_batch(params, api_key, batch_size, language):
     client = openai.OpenAI(api_key=api_key)
@@ -224,18 +218,20 @@ You are an advanced AI assistant designed to generate high-quality exam question
 # Instructions:
 
 Follow all the detailed steps provided previously to generate high-quality exam questions. Ensure that you strictly adhere to the output format specified, which is a CSV-friendly format with the following headers:
-Subject,Topic,Sub-Topic,Question Type,Question Text (English),Question Text (Hindi),Option A (English),Option B (English),Option C (English),Option D (English),Option A (Hindi),Option B (Hindi),Option C (Hindi),Option D (Hindi),Correct Answer (English),Correct Answer (Hindi),Explanation (English),Explanation (Hindi),Difficulty Level,Language,Source PDF Name,Source Page Number,Original Question Number,Year of Original Question
+
+"Subject", "Topic", "Sub-Topic", "Question Type", "Question Text (English)", "Question Text (Hindi)", "Option A (English)", "Option B (English)", "Option C (English)", "Option D (English)", "Option A (Hindi)", "Option B (Hindi)", "Option C (Hindi)", "Option D (Hindi)", "Correct Answer (English)", "Correct Answer (Hindi)", "Explanation (English)", "Explanation (Hindi)", "Difficulty Level", "Language", "Source PDF Name", "Source Page Number", "Original Question Number", "Year of Original Question"
 
 **Important Notes:**
 - Ensure all fields are populated correctly; if a field is not applicable, leave it blank.
 - Do not include any text before or after the CSV content.
-- Do not hallucinate PDF names; use the exact names from the Knowledge Base.
-- Provide accurate page numbers and original question numbers from the PDFs.
+- **For any missing values**, leave that column blank (instead of skipping it).
+- **Ensure that every column is properly mapped** in the exact sequence specified in the header.
 - Ensure that the Correct Answer (English) field contains the full text of the correct option.
 - Explanations should be detailed, at least 2-3 paragraphs, and explain why other options are not suitable.
 - Use only information that can be directly verified from the Knowledge Base.
 - If no relevant entry is found in the Knowledge Base, respond with: "Not found in knowledge text."
 """
+
 
     retry_count = 0
 
