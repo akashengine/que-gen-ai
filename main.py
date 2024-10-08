@@ -155,7 +155,7 @@ def process_csv_content(csv_content, language):
 
     return df[columns_to_show]
 
-def generate_questions_batch(params, api_key, remaining_questions, cumulative_df, language):
+def generate_questions_batch(params, api_key, batch_size, language):
     client = openai.OpenAI(api_key=api_key)
     subjects, topics, selected_pdfs, keywords, question_types, num_questions, difficulty_levels, language_param, question_source, year_range = params
 
@@ -166,7 +166,7 @@ def generate_questions_batch(params, api_key, remaining_questions, cumulative_df
     difficulty_levels_text = ", ".join(difficulty_levels)
 
     prompt = f"""
-Generate {remaining_questions} unique questions based on the following parameters:
+Generate {batch_size} unique questions based on the following parameters:
 • Subjects: {subjects_text}
 • Topics: {topics_text}
 • Keywords: {keywords}
@@ -223,7 +223,7 @@ Instructions:
                     assistant_messages = [msg for msg in messages.data if msg.role == "assistant"]
                     if not assistant_messages:
                         st.error("No assistant response found.")
-                        return cumulative_df, 0
+                        return None
 
                     last_message = assistant_messages[-1]
                     csv_content = last_message.content[0].text.value
@@ -231,13 +231,7 @@ Instructions:
                     # Process CSV content
                     df = process_csv_content(csv_content, language)
                     if df is not None and not df.empty:
-                        # Append to cumulative dataframe
-                        cumulative_df = pd.concat([cumulative_df, df], ignore_index=True)
-                        # Remove duplicates
-                        cumulative_df.drop_duplicates(subset=['Question Text (English)'], inplace=True)
-                        # Number of new questions added
-                        new_questions = len(df)
-                        return cumulative_df, new_questions
+                        return df
                     else:
                         st.warning("No valid CSV content generated. Retrying...")
                         retry_count += 1
@@ -265,7 +259,7 @@ Instructions:
             retry_count += 1
 
     st.error(f"Failed to generate questions after {MAX_RETRIES} attempts.")
-    return cumulative_df, 0
+    return None
 
 def generate_questions(params, api_key):
     subjects, topics, selected_pdfs, keywords, question_types, num_questions, difficulty_levels, language, question_source, year_range = params
@@ -284,29 +278,34 @@ def generate_questions(params, api_key):
 
     # Prepare batches
     batches = []
-    while total_questions < num_questions:
-        remaining_questions = min(num_questions - total_questions, batch_size)
-        batches.append(remaining_questions)
-        total_questions += remaining_questions
+    remaining_questions = num_questions
+    while remaining_questions > 0:
+        current_batch_size = min(remaining_questions, batch_size)
+        batches.append(current_batch_size)
+        remaining_questions -= current_batch_size
 
-    total_questions = 0  # Reset to count actual generated questions
     progress_bar = st.progress(0)
 
     # Use ThreadPoolExecutor for parallel execution
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         futures = []
         for batch_size in batches:
-            futures.append(executor.submit(generate_questions_batch, params, api_key, batch_size, cumulative_df.copy(), language))
+            futures.append(executor.submit(generate_questions_batch, params, api_key, batch_size, language))
 
         for future in concurrent.futures.as_completed(futures):
-            cumulative_df, new_questions = future.result()
-            total_questions = len(cumulative_df)
-            # Update the displayed dataframe
-            dataframe_placeholder.dataframe(cumulative_df)
-            # Update progress bar
-            progress = min(total_questions / num_questions, 1.0)
-            progress_bar.progress(progress)
-            st.success(f"Total questions generated: {total_questions}/{num_questions}")
+            df = future.result()
+            if df is not None and not df.empty:
+                cumulative_df = pd.concat([cumulative_df, df], ignore_index=True)
+                cumulative_df.drop_duplicates(subset=['Question Text (English)'], inplace=True)
+                total_questions = len(cumulative_df)
+                # Update the displayed dataframe
+                dataframe_placeholder.dataframe(cumulative_df)
+                # Update progress bar
+                progress = min(total_questions / num_questions, 1.0)
+                progress_bar.progress(progress)
+                st.success(f"Total questions generated: {total_questions}/{num_questions}")
+            else:
+                st.warning("A batch did not return any questions.")
 
             if total_questions >= num_questions:
                 break
@@ -326,6 +325,7 @@ def main():
         return
 
     params = create_sidebar()
+    num_questions = params[5]  # Extract num_questions from params
 
     if st.sidebar.button("Generate Questions"):
         cumulative_df = generate_questions(params, api_key)
