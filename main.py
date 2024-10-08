@@ -161,12 +161,14 @@ def generate_questions(params, api_key):
         )
 
         start_time = time.time()
+        max_run_time = 600  # 10 minutes in seconds
+
         while run.status not in ["completed", "requires_action", "failed", "cancelled", "expired"]:
             time.sleep(POLLING_INTERVAL)
             run = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
             
-            if time.time() - start_time > run.expires_at:
-                st.warning("Run took too long and expired. Retrying...")
+            if time.time() - start_time > max_run_time:
+                st.warning("Run took too long. Retrying...")
                 break
 
         if run.status == "completed":
