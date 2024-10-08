@@ -108,22 +108,6 @@ def create_sidebar():
 
     return subjects, selected_pdfs, sub_topic, keywords, question_types, num_questions, difficulty_levels, language, question_source, year_range
 
-import openai
-import time
-import pandas as pd
-import io
-import streamlit as st
-import tiktoken
-from subject_data import SUBJECTS, TOPICS, PDF_NAMES
-import csv
-
-# Constants
-ASSISTANT_ID = "asst_WejSQNw2pN2DRnUOXpU3vMeX"
-MODEL_NAME = "gpt-4o"
-MAX_RETRIES = 3
-POLLING_INTERVAL = 2  # seconds
-MAX_RUN_TIME = 600  # 10 minutes in seconds
-
 def process_csv_content(csv_content, language):
     # Check if the content is not found in knowledge text
     if "Not found in knowledge text" in csv_content:
