@@ -138,10 +138,18 @@ def process_csv_content(csv_content, language):
         "Difficulty Level", "Language", "Source PDF Name", "Source Page Number", "Original Question Number", "Year of Original Question"
     ]
 
-    # Ensure all expected columns are present
-    for col in expected_columns:
-        if col not in df.columns:
+    # Check for missing columns
+    missing_columns = [col for col in expected_columns if col not in df.columns]
+    if missing_columns:
+        st.warning(f"Missing columns: {', '.join(missing_columns)}. Adding them with empty values.")
+        for col in missing_columns:
             df[col] = ""
+
+    # Check for extra columns
+    extra_columns = [col for col in df.columns if col not in expected_columns]
+    if extra_columns:
+        st.warning(f"Extra columns found: {', '.join(extra_columns)}. These will be removed.")
+        df = df.drop(columns=extra_columns)
 
     # Reorder columns to match expected order
     df = df.reindex(columns=expected_columns)
@@ -154,12 +162,35 @@ def process_csv_content(csv_content, language):
     for col in numeric_columns:
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
 
+    # Ensure all text columns are of string type
+    text_columns = [col for col in df.columns if col not in numeric_columns]
+    for col in text_columns:
+        df[col] = df[col].astype(str)
+
+    # Handle language-specific columns
     if language == "Hindi":
         columns_to_show = [col for col in df.columns if "Hindi" in col or col in ["Subject", "Topic", "Sub-Topic", "Question Type", "Difficulty Level", "Language", "Source PDF Name", "Source Page Number", "Original Question Number", "Year of Original Question"]]
     elif language == "English":
         columns_to_show = [col for col in df.columns if "Hindi" not in col]
     else:  # Both
         columns_to_show = df.columns
+
+    # Check if required columns are present for the selected language
+    required_columns = ["Subject", "Topic", "Question Type", "Difficulty Level"]
+    missing_required = [col for col in required_columns if col not in columns_to_show]
+    if missing_required:
+        st.error(f"Required columns are missing for the selected language: {', '.join(missing_required)}")
+        return None
+
+    # Validate that each row has a question text and at least two options
+    invalid_rows = df[
+        (df["Question Text (English)"].isna() & df["Question Text (Hindi)"].isna()) |
+        ((df["Option A (English)"].isna() & df["Option B (English)"].isna()) &
+         (df["Option A (Hindi)"].isna() & df["Option B (Hindi)"].isna()))
+    ]
+    if not invalid_rows.empty:
+        st.warning(f"Found {len(invalid_rows)} rows with missing question text or insufficient options. These rows will be removed.")
+        df = df.drop(invalid_rows.index)
 
     return df[columns_to_show]
 
