@@ -3,7 +3,8 @@ import pandas as pd
 import io
 import time
 import random
-from openai import OpenAI
+from openai import OpenAI, AssistantEventHandler
+from typing_extensions import override
 from subject_data import SUBJECTS, TOPICS, PDF_NAMES
 
 # Constants
@@ -60,8 +61,21 @@ CSS = """
 </style>
 """
 
+class EventHandler(AssistantEventHandler):
+    @override
+    def on_text_created(self, text) -> None:
+        st.text_area("Generated Text:", value=text, height=200, key=f"{random.randint(0, 10000)}")
+        st.experimental_rerun()
+
+    @override
+    def on_message_done(self, message) -> None:
+        st.text_area("Final Output:", value=message.content[0].text.value, height=200, key=f"{random.randint(0, 10000)}")
+        st.experimental_rerun()
+
+
 def get_random_quote():
     return random.choice(QUOTES)
+
 
 def create_sidebar():
     st.sidebar.title("Question Generator")
@@ -85,13 +99,14 @@ def create_sidebar():
     selected_pdfs = st.sidebar.multiselect("Select PDF(s)", list(set(pdf_options)))
     
     question_types = st.sidebar.multiselect("Question Type(s)", ["MCQ", "Fill in the Blanks", "Short Answer", "Descriptive/Essay", "Match the Following", "True/False"])
-    num_questions = st.sidebar.number_input("Number of Questions", min_value=1, max_value=50, value=5)
+    num_questions = st.sidebar.number_input("Number of Questions", min_value=1, max_value=250, value=5)
     difficulty_levels = st.sidebar.multiselect("Difficulty Level(s)", ["Easy", "Medium", "Hard"])
     language = st.sidebar.selectbox("Language", ["English", "Hindi", "Both"])
     question_source = st.sidebar.selectbox("Question Source", ["Rewrite existing", "Create new"])
     year_range = st.sidebar.slider("Year Range", 1947, 2024, (2000, 2024))
     
     return subjects, topics, sub_topic, selected_pdfs, question_types, num_questions, difficulty_levels, language, question_source, year_range
+
 
 def validate_api_key(api_key):
     try:
@@ -100,6 +115,7 @@ def validate_api_key(api_key):
         return True
     except Exception as e:
         return False
+
 
 def generate_questions(params, api_key):
     subjects, topics, sub_topic, selected_pdfs, question_types, num_questions, difficulty_levels, language, question_source, year_range = params
@@ -142,62 +158,14 @@ def generate_questions(params, api_key):
         """
     )
 
-    run = client.beta.threads.runs.create(
+    with client.beta.threads.runs.stream(
         thread_id=thread.id,
-        assistant_id=ASSISTANT_ID
-    )
+        assistant_id=ASSISTANT_ID,
+        instructions="Streaming output row by row.",
+        event_handler=EventHandler()
+    ) as stream:
+        stream.until_done()
 
-    while run.status != "completed":
-        time.sleep(0.5)
-        run = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
-
-    messages = client.beta.threads.messages.list(thread_id=thread.id)
-    last_message = messages.data[0]
-    csv_content = last_message.content[0].text.value
-
-    return csv_content
-
-def process_csv_content(csv_content, language):
-    # Check if the content is not found in knowledge text
-    if "Not found in knowledge text" in csv_content:
-        return None
-
-    # Remove any text before the actual CSV data
-    csv_start = csv_content.find("Subject,Topic,")
-    if csv_start != -1:
-        csv_content = csv_content[csv_start:]
-
-    # Read CSV content
-    try:
-        df = pd.read_csv(io.StringIO(csv_content))
-    except pd.errors.ParserError:
-        st.error("Error parsing CSV data. The assistant's response may not be in the correct format.")
-        return None
-    
-    # Ensure all expected columns are present
-    expected_columns = [
-        "Subject", "Topic", "Sub-Topic", "Question Type", "Question Text (English)", 
-        "Question Text (Hindi)", "Option A (English)", "Option B (English)", 
-        "Option C (English)", "Option D (English)", "Option A (Hindi)", 
-        "Option B (Hindi)", "Option C (Hindi)", "Option D (Hindi)", 
-        "Correct Answer (English)", "Correct Answer (Hindi)", "Explanation (English)", 
-        "Explanation (Hindi)", "Difficulty Level", "Language", "Source PDF Name", 
-        "Source Page Number", "Original Question Number", "Year of Original Question"
-    ]
-    
-    for col in expected_columns:
-        if col not in df.columns:
-            df[col] = ""
-    
-    # Filter columns based on language selection
-    if language == "Hindi":
-        columns_to_show = [col for col in df.columns if "Hindi" in col or col not in ["Question Text (English)", "Option A (English)", "Option B (English)", "Option C (English)", "Option D (English)", "Correct Answer (English)", "Explanation (English)"]]
-    elif language == "English":
-        columns_to_show = [col for col in df.columns if "Hindi" not in col]
-    else:  # Both
-        columns_to_show = df.columns
-
-    return df[columns_to_show]
 
 def main():
     st.set_page_config(page_title="Drishti QueAI", page_icon="📚", layout="wide")
@@ -234,43 +202,13 @@ def main():
             time.sleep(0.5)
 
         try:
-            csv_content = generate_questions(params, api_key)
-            df = process_csv_content(csv_content, params[7])  # params[7] is the language selection
-            
-            if df is None:
-                st.warning("No questions could be generated based on the given parameters. The content may not be found in the knowledge text.")
-            else:
-                # Save generated DataFrame to session state
-                st.session_state.generated_df = df
-                
-                # Display the DataFrame with horizontal scrolling
-                st.markdown(
-                    """
-                    <style>
-                    .stDataFrame {
-                        width: 100%;
-                        overflow-x: auto;
-                    }
-                    </style>
-                    """,
-                    unsafe_allow_html=True
-                )
-                st.dataframe(df)
-                
-                # Create CSV from DataFrame and provide download button
-                csv = df.to_csv(index=False)
-                st.download_button(
-                    label="Download CSV",
-                    data=csv,
-                    file_name="generated_questions.csv",
-                    mime="text/csv",
-                )
-                
+            generate_questions(params, api_key)
         except Exception as e:
             st.error(f"An error occurred: {str(e)}")
         finally:
             progress_bar.empty()
             status_text.empty()
+
 
 if __name__ == "__main__":
     main()
