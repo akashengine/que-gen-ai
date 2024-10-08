@@ -16,6 +16,21 @@ MAX_RETRIES = 3
 POLLING_INTERVAL = 2  # seconds
 MAX_RUN_TIME = 600  # 10 minutes in seconds
 
+# Inspirational quotes
+QUOTES = [
+    "Every question you tackle brings you closer to success.",
+    "Knowledge is the key; perseverance unlocks the door.",
+    "In the journey of learning, curiosity is your best companion.",
+    "Today's effort is tomorrow's excellence.",
+    "Embrace the challenge; it's shaping your future.",
+    "Small steps lead to big achievements in UPSC preparation.",
+    "Your dedication today paves the way for tomorrow's success.",
+    "Each question mastered is a step towards your goal.",
+    "In the world of UPSC, consistency is the true key to success.",
+    "Challenge your limits, expand your knowledge, achieve your dreams."
+]
+
+
 # CSS Styling
 CSS = """
 <style>
@@ -266,6 +281,15 @@ def main():
     params = create_sidebar()
 
     if st.sidebar.button("Generate Questions"):
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+
+        # Display loading bar and random quotes for 3 seconds
+        start_time = time.time()
+        while time.time() - start_time < 3:  # Keep the loading bar for only 3 seconds
+            progress_bar.progress(min(int((time.time() - start_time) / 3 * 100), 100))
+            status_text.text(get_random_quote())
+            time.sleep(0.1)  # Reduced sleep time for smoother updates
         csv_content = generate_questions(params, api_key)
         
         if csv_content:
