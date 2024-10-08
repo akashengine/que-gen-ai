@@ -3,16 +3,11 @@ import pandas as pd
 import io
 import time
 import random
-import logging
 from openai import OpenAI
-from typing_extensions import override
 from subject_data import SUBJECTS, TOPICS, PDF_NAMES
 
-# Setup logging
-logging.basicConfig(level=logging.INFO)
-
 # Constants
-ASSISTANT_ID = "asst_WejSQNw2pN2DRnUOXpU3vMeX"
+ASSISTANT_ID = "asst_1cp5iEnWInbKxO05X1fEVKFC"
 
 # Inspirational quotes
 QUOTES = [
@@ -68,37 +63,24 @@ CSS = """
 def get_random_quote():
     return random.choice(QUOTES)
 
-
 def create_sidebar():
     st.sidebar.title("Question Generator")
-    subjects = st.sidebar.multiselect("Select Subject(s)", SUBJECTS)
-    
-    all_topics = []
-    for subject in subjects:
-        all_topics.extend(TOPICS.get(subject, []))
-    topics = st.sidebar.multiselect("Select Topic(s)", list(set(all_topics)))
-    
+    subject = st.sidebar.selectbox("Subject", SUBJECTS)
+    topic = st.sidebar.selectbox("Topic", TOPICS.get(subject, []))
     sub_topic = st.sidebar.text_input("Sub-Topic", "General")
     
-    pdf_options = []
-    for subject in subjects:
-        subject_pdfs = PDF_NAMES.get(subject, {})
-        if isinstance(subject_pdfs, dict):
-            for topic in topics:
-                pdf_options.extend(subject_pdfs.get(topic, []))
-        else:
-            pdf_options.extend(subject_pdfs)
-    selected_pdfs = st.sidebar.multiselect("Select PDF(s)", list(set(pdf_options)))
+    pdf_options = PDF_NAMES.get(subject, {})
+    if isinstance(pdf_options, dict):
+        pdf_options = pdf_options.get(topic, [])
+    selected_pdfs = st.sidebar.multiselect("Select PDF(s)", pdf_options)
     
-    question_types = st.sidebar.multiselect("Question Type(s)", ["MCQ", "Fill in the Blanks", "Short Answer", "Descriptive/Essay", "Match the Following", "True/False"])
+    question_type = st.sidebar.selectbox("Question Type", ["MCQ", "Fill in the Blanks", "Short Answer", "Descriptive/Essay", "Match the Following", "True/False"])
     num_questions = st.sidebar.number_input("Number of Questions", min_value=1, max_value=250, value=5)
-    difficulty_levels = st.sidebar.multiselect("Difficulty Level(s)", ["Easy", "Medium", "Hard"])
+    difficulty = st.sidebar.selectbox("Difficulty Level", ["Easy", "Medium", "Hard"])
     language = st.sidebar.selectbox("Language", ["English", "Hindi", "Both"])
     question_source = st.sidebar.selectbox("Question Source", ["Rewrite existing", "Create new"])
-    year_range = st.sidebar.slider("Year Range", 1947, 2024, (2000, 2024))
     
-    return subjects, topics, sub_topic, selected_pdfs, question_types, num_questions, difficulty_levels, language, question_source, year_range
-
+    return subject, topic, sub_topic, selected_pdfs, question_type, num_questions, difficulty, language, question_source
 
 def validate_api_key(api_key):
     try:
@@ -106,65 +88,74 @@ def validate_api_key(api_key):
         client.models.list()
         return True
     except Exception as e:
-        logging.error(f"API key validation failed: {e}")
         return False
 
-
 def generate_questions(params, api_key):
-    subjects, topics, sub_topic, selected_pdfs, question_types, num_questions, difficulty_levels, language, question_source, year_range = params
+    subject, topic, sub_topic, selected_pdfs, question_type, num_questions, difficulty, language, question_source = params
     
     client = OpenAI(api_key=api_key)
-    subjects_text = ", ".join(subjects) if subjects else "No specific subject selected"
-    topics_text = ", ".join(topics) if topics else "No specific topic selected"
     pdf_text = ", ".join(selected_pdfs) if selected_pdfs else "No specific PDF selected"
-    question_types_text = ", ".join(question_types)
-    difficulty_levels_text = ", ".join(difficulty_levels)
 
     thread = client.beta.threads.create()
 
-    try:
-        message = client.beta.threads.messages.create(
-            thread_id=thread.id,
-            role="user",
-            content=f"""
-            Generate {num_questions} questions based on the following parameters:
-            • Subjects: {subjects_text}
-            • Topics: {topics_text}
-            • Sub-Topic: {sub_topic}
-            • Question Type(s): {question_types_text}
-            • Difficulty Level(s): {difficulty_levels_text}
-            • Language: {language}
-            • Question Source: {question_source}
-            • Year Range: {year_range[0]} to {year_range[1]}
-            • Reference Material: {pdf_text}
+    message = client.beta.threads.messages.create(
+        thread_id=thread.id,
+        role="user",
+        content=f"""
+        Input Parameters:
+        • Subject: {subject}
+        • Topic: {topic}
+        • Sub-Topic: {sub_topic}
+        • Question Type: {question_type}
+        • Number of Questions: {num_questions}
+        • Difficulty Level: {difficulty}
+        • Language: {language}
+        • Question Source: {question_source}
+        Please generate the requested number of questions following the above guidelines. Use content from: {pdf_text}. 
+        Do not generate any extra text apart from the CSV; only provide the CSV output as per the specified format.
+        """
+    )
 
-            Instructions:
-            1. Use the specified PDFs as reference material.
-            2. For each question, use the actual question number and page number from the referenced PDF.
-            3. Ensure the year for each question falls within the specified range.
-            4. If the language is set to "Hindi", provide all text (questions, options, answers, explanations) in Hindi only.
-            5. If the language is set to "English", provide all text in English only.
-            6. If the language is set to "Both", provide all text in both English and Hindi.
-            7. Format the output as a CSV with the following headers:
-               Subject,Topic,Sub-Topic,Question Type,Question Text (English),Question Text (Hindi),Option A (English),Option B (English),Option C (English),Option D (English),Option A (Hindi),Option B (Hindi),Option C (Hindi),Option D (Hindi),Correct Answer (English),Correct Answer (Hindi),Explanation (English),Explanation (Hindi),Difficulty Level,Language,Source PDF Name,Source Page Number,Original Question Number,Year of Original Question
+    run = client.beta.threads.runs.create(
+        thread_id=thread.id,
+        assistant_id=ASSISTANT_ID
+    )
 
-            Important: Do not generate any text before or after the CSV content. The response should contain only the CSV data.
-            """
-        )
+    while run.status != "completed":
+        time.sleep(1)
+        run = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
 
-        # Retrieve and display the generated questions row by row
-        response = client.beta.threads.runs.create(thread_id=thread.id, assistant_id=ASSISTANT_ID)
-        generated_rows = response.content.split('\n')
+    messages = client.beta.threads.messages.list(thread_id=thread.id)
+    last_message = messages.data[0]
+    csv_content = last_message.content[0].text.value
 
-        for row in generated_rows:
-            if row.strip():
-                st.text_area("Generated Questions:", value=row, height=100, key=f"generated_questions_{len(row)}")
-                time.sleep(0.5)  # Add a small delay to simulate streaming output
+    return csv_content
 
-    except Exception as e:
-        logging.error(f"Error during question generation: {e}")
-        st.error(f"An error occurred during question generation: {str(e)}")
+def process_csv_content(csv_content):
+    # Remove any text before the actual CSV data
+    csv_start = csv_content.find("Subject,Topic,")
+    if csv_start != -1:
+        csv_content = csv_content[csv_start:]
 
+    # Read CSV content
+    df = pd.read_csv(io.StringIO(csv_content))
+    
+    # Ensure all expected columns are present
+    expected_columns = [
+        "Subject", "Topic", "Sub-Topic", "Question Type", "Question Text (English)", 
+        "Question Text (Hindi)", "Option A (English)", "Option B (English)", 
+        "Option C (English)", "Option D (English)", "Option A (Hindi)", 
+        "Option B (Hindi)", "Option C (Hindi)", "Option D (Hindi)", 
+        "Correct Answer (English)", "Correct Answer (Hindi)", "Explanation (English)", 
+        "Explanation (Hindi)", "Difficulty Level", "Language", "Source PDF Name", 
+        "Source Page Number", "Original Question Number", "Year of Original Question"
+    ]
+    
+    for col in expected_columns:
+        if col not in df.columns:
+            df[col] = ""
+    
+    return df[expected_columns]
 
 def main():
     st.set_page_config(page_title="Drishti QueAI", page_icon="📚", layout="wide")
@@ -194,20 +185,47 @@ def main():
         progress_bar = st.progress(0)
         status_text = st.empty()
 
-        start_time = time.time()
-        while time.time() - start_time < 3:  # Keep the loading bar for only 3 seconds
-            progress_bar.progress(min(int((time.time() - start_time) / 3 * 100), 100))
+        for i in range(0, 101, 5):
             status_text.text(get_random_quote())
-            time.sleep(0.5)
+            progress_bar.progress(i)
+            time.sleep(5)  # Update quote every 5 seconds
 
         try:
-            generate_questions(params, api_key)
+            csv_content = generate_questions(params, api_key)
+            df = process_csv_content(csv_content)
+            
+            # Save generated DataFrame to session state
+            st.session_state.generated_df = df
+            
+            # Display the DataFrame with horizontal scrolling
+            st.markdown(
+                """
+                <style>
+                .stDataFrame {
+                    width: 100%;
+                    overflow-x: auto;
+                }
+                </style>
+                """,
+                unsafe_allow_html=True
+            )
+            st.dataframe(df)
+            
+            # Create CSV from DataFrame and provide download button
+            if 'generated_df' in st.session_state:
+                csv = st.session_state.generated_df.to_csv(index=False)
+                st.download_button(
+                    label="Download CSV",
+                    data=csv,
+                    file_name="generated_questions.csv",
+                    mime="text/csv",
+                )
+                
         except Exception as e:
             st.error(f"An error occurred: {str(e)}")
         finally:
             progress_bar.empty()
             status_text.empty()
-
 
 if __name__ == "__main__":
     main()
