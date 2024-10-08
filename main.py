@@ -275,7 +275,7 @@ Subject,Topic,Sub-Topic,Question Type,Question Text (English),Question Text (Hin
     st.error(f"Failed to generate questions after {MAX_RETRIES} attempts.")
     return None
 
-def generate_questions(params, api_key):
+ef generate_questions(params, api_key):
     subjects, topics, sub_topic, selected_pdfs, keywords, question_types, num_questions, difficulty_levels, language, question_source, year_range = params
 
     cumulative_df = pd.DataFrame()
@@ -296,27 +296,45 @@ def generate_questions(params, api_key):
     max_attempts = 10  # Maximum number of attempts to generate all questions
     attempts = 0
 
-    while total_questions < num_questions and attempts < max_attempts:
-        current_batch_size = min(num_questions - total_questions, batch_size)
-        df = generate_questions_batch(params, api_key, current_batch_size, language)
-        
-        if df is not None and not df.empty:
-            cumulative_df = pd.concat([cumulative_df, df], ignore_index=True)
-            cumulative_df.drop_duplicates(subset=['Question Text (English)', 'Question Text (Hindi)'], inplace=True)
-            total_questions = len(cumulative_df)
-            
-            # Update the displayed dataframe
-            dataframe_placeholder.dataframe(cumulative_df)
-            
-            # Update progress bar
-            progress = min(total_questions / num_questions, 1.0)
-            progress_bar.progress(progress)
-            
-            status_placeholder.success(f"Total questions generated: {total_questions}/{num_questions}")
-        else:
-            st.warning("A batch did not return any questions. Retrying...")
-        
-        attempts += 1
+    # Prepare batches
+    batches = []
+    remaining_questions = num_questions
+    while remaining_questions > 0:
+        current_batch_size = min(remaining_questions, batch_size)
+        batches.append(current_batch_size)
+        remaining_questions -= current_batch_size
+
+    # Use ThreadPoolExecutor for parallel execution
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        futures = []
+        for batch_size in batches:
+            future = executor.submit(generate_questions_batch, params, api_key, batch_size, language)
+            futures.append(future)
+
+        for future in concurrent.futures.as_completed(futures):
+            df = future.result()
+            if df is not None and not df.empty:
+                cumulative_df = pd.concat([cumulative_df, df], ignore_index=True)
+                cumulative_df.drop_duplicates(subset=['Question Text (English)', 'Question Text (Hindi)'], inplace=True)
+                total_questions = len(cumulative_df)
+                
+                # Update the displayed dataframe
+                dataframe_placeholder.dataframe(cumulative_df)
+                
+                # Update progress bar
+                progress = min(total_questions / num_questions, 1.0)
+                progress_bar.progress(progress)
+                
+                status_placeholder.success(f"Total questions generated: {total_questions}/{num_questions}")
+            else:
+                st.warning("A batch did not return any questions.")
+
+            if total_questions >= num_questions:
+                break
+
+            attempts += 1
+            if attempts >= max_attempts:
+                break
 
     if total_questions < num_questions:
         st.warning(f"Only {total_questions} unique questions could be generated out of the requested {num_questions}.")
@@ -342,15 +360,16 @@ def main():
 
     if st.sidebar.button("Generate Questions"):
         with st.spinner("Generating questions..."):
-            cumulative_df = generate_questions(params, api_key)
-
-        if cumulative_df is not None and not cumulative_df.empty:
-            st.success(f"Generated {len(cumulative_df)} questions successfully.")
-
-            csv_data = cumulative_df.to_csv(index=False)
-            st.download_button(label="Download CSV", data=csv_data, file_name="generated_questions.csv", mime="text/csv")
-        else:
-            st.error("No questions were generated. Please try again.")
+            try:
+                cumulative_df = generate_questions(params, api_key)
+                if cumulative_df is not None and not cumulative_df.empty:
+                    st.success(f"Generated {len(cumulative_df)} questions successfully.")
+                    csv_data = cumulative_df.to_csv(index=False)
+                    st.download_button(label="Download CSV", data=csv_data, file_name="generated_questions.csv", mime="text/csv")
+                else:
+                    st.error("No questions were generated. Please try again.")
+            except Exception as e:
+                st.error(f"An error occurred while generating questions: {str(e)}")
 
 if __name__ == "__main__":
     main()
