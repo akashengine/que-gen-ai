@@ -59,7 +59,7 @@ def validate_api_key(api_key):
         client.models.list()
         return True
     except Exception as e:
-        st.error("Invalid API key")
+        st.error(f"Invalid API key: {str(e)}")
         return False
 
 def count_tokens(text, model="gpt-4o"):
@@ -112,7 +112,7 @@ def process_csv_content(csv_content, language):
         csv_content = csv_content[csv_start:]
 
     try:
-        df = pd.read_csv(io.StringIO(csv_content))
+        df = pd.read_csv(io.StringIO(csv_content), skipinitialspace=True)
     except pd.errors.ParserError:
         st.error("Error parsing CSV data. The assistant's response may not be in the correct format.")
         return None
@@ -257,7 +257,6 @@ def main():
         return
 
     if not validate_api_key(api_key):
-        st.error("Invalid API key. Please enter a valid API key.")
         return
 
     params = create_sidebar()
