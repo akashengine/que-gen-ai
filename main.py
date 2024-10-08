@@ -7,7 +7,7 @@ import tiktoken
 from subject_data import SUBJECTS, TOPICS, PDF_NAMES
 import csv
 
-import concurrent.futures  # For threading (if needed)
+import concurrent.futures  # For threading
 
 # Constants
 ASSISTANT_ID = "asst_WejSQNw2pN2DRnUOXpU3vMeX"
@@ -68,12 +68,6 @@ def count_tokens(text, model="gpt-4o"):
     encoding = tiktoken.encoding_for_model(model)
     return len(encoding.encode(text))
 
-def chunk_input(text, max_tokens=MAX_COMPLETION_TOKENS):
-    encoding = tiktoken.encoding_for_model("gpt-4o")
-    tokens = encoding.encode(text)
-    chunks = [tokens[i:i+max_tokens] for i in range(0, len(tokens), max_tokens)]
-    return [encoding.decode(chunk) for chunk in chunks]
-
 def create_sidebar():
     st.sidebar.title("Question Generator")
 
@@ -106,29 +100,32 @@ def create_sidebar():
     return subjects, topics, selected_pdfs, keywords, question_types, num_questions, difficulty_levels, language, question_source, year_range
 
 def process_csv_content(csv_content, language):
-    if "Not found in knowledge text" in csv_content:
+    if "Not found in knowledge text" in csv_content or not csv_content.strip():
         return None
 
     # Split the content into lines
     lines = csv_content.strip().split('\n')
 
-    # Identify unique headers
-    headers = []
+    # Identify headers and data lines
+    header_line = None
     data_lines = []
+
     for line in lines:
-        if line.startswith("Subject,Topic,"):
-            if line not in headers:
-                headers.append(line)
+        if not header_line and ("Subject" in line and "Topic" in line):
+            header_line = line
         else:
             data_lines.append(line)
 
-    # Use the first header and all data lines
-    processed_content = headers[0] + '\n' + '\n'.join(data_lines)
+    if not header_line:
+        st.error("CSV header is missing in the assistant's response.")
+        return None
+
+    processed_content = header_line + '\n' + '\n'.join(data_lines)
 
     try:
         df = pd.read_csv(io.StringIO(processed_content), skipinitialspace=True)
-    except pd.errors.ParserError:
-        st.error("Error parsing CSV data. The assistant's response may not be in the correct format.")
+    except pd.errors.ParserError as e:
+        st.error(f"Error parsing CSV data: {e}")
         return None
 
     expected_columns = [
@@ -141,9 +138,13 @@ def process_csv_content(csv_content, language):
         "Source Page Number", "Original Question Number", "Year of Original Question"
     ]
 
+    # Ensure all expected columns are present
     for col in expected_columns:
         if col not in df.columns:
             df[col] = ""
+
+    # Reorder columns to match expected order
+    df = df[expected_columns]
 
     if language == "Hindi":
         columns_to_show = [col for col in df.columns if "Hindi" in col or col not in ["Question Text (English)", "Option A (English)", "Option B (English)", "Option C (English)", "Option D (English)", "Correct Answer (English)", "Explanation (English)"]]
@@ -154,32 +155,17 @@ def process_csv_content(csv_content, language):
 
     return df[columns_to_show]
 
-def generate_questions(params, api_key):
+def generate_questions_batch(params, api_key, remaining_questions, cumulative_df, language):
     client = openai.OpenAI(api_key=api_key)
+    subjects, topics, selected_pdfs, keywords, question_types, num_questions, difficulty_levels, language_param, question_source, year_range = params
 
-    subjects, topics, selected_pdfs, keywords, question_types, num_questions, difficulty_levels, language, question_source, year_range = params
     subjects_text = ", ".join(subjects) if subjects else "No specific subject selected"
     topics_text = ", ".join(topics) if topics else "No specific topic selected"
     pdf_text = ", ".join(selected_pdfs) if selected_pdfs else "No specific PDF selected"
     question_types_text = ", ".join(question_types)
     difficulty_levels_text = ", ".join(difficulty_levels)
 
-    total_questions = 0
-    cumulative_df = pd.DataFrame()
-    dataframe_placeholder = st.empty()
-    retry_count = 0
-
-    # Adjust batch size based on total number of questions
-    if num_questions >= 500:
-        batch_size = 50
-    elif num_questions >= 100:
-        batch_size = 20
-    else:
-        batch_size = 5
-
-    while total_questions < num_questions and retry_count < MAX_RETRIES:
-        remaining_questions = min(num_questions - total_questions, batch_size)
-        prompt = f"""
+    prompt = f"""
 Generate {remaining_questions} unique questions based on the following parameters:
 • Subjects: {subjects_text}
 • Topics: {topics_text}
@@ -206,7 +192,11 @@ Instructions:
 11. Ensure that the generated questions are unique and do not duplicate any previous questions.
 """
 
+    retry_count = 0
+
+    while retry_count < MAX_RETRIES:
         try:
+            # Create a new thread for each run
             thread = client.beta.threads.create()
 
             message = client.beta.threads.messages.create(
@@ -229,7 +219,13 @@ Instructions:
 
                 if run.status == "completed":
                     messages = client.beta.threads.messages.list(thread_id=thread.id)
-                    last_message = messages.data[0]  # Get the most recent message
+                    # Get the last assistant message
+                    assistant_messages = [msg for msg in messages.data if msg.role == "assistant"]
+                    if not assistant_messages:
+                        st.error("No assistant response found.")
+                        return cumulative_df, 0
+
+                    last_message = assistant_messages[-1]
                     csv_content = last_message.content[0].text.value
 
                     # Process CSV content
@@ -239,17 +235,13 @@ Instructions:
                         cumulative_df = pd.concat([cumulative_df, df], ignore_index=True)
                         # Remove duplicates
                         cumulative_df.drop_duplicates(subset=['Question Text (English)'], inplace=True)
-                        # Update total_questions
-                        total_questions = len(cumulative_df)
-                        # Update the displayed dataframe
-                        dataframe_placeholder.dataframe(cumulative_df)
-                        # Reset retry count
-                        retry_count = 0
-                        st.success(f"Total questions generated: {total_questions}/{num_questions}")
+                        # Number of new questions added
+                        new_questions = len(df)
+                        return cumulative_df, new_questions
                     else:
                         st.warning("No valid CSV content generated. Retrying...")
                         retry_count += 1
-                    break
+                        break
                 elif run.status in ["failed", "cancelled", "expired"]:
                     st.error(f"Run {run.status}. Error: {run.last_error}. Retrying...")
                     retry_count += 1
@@ -272,9 +264,52 @@ Instructions:
             st.error(f"An unexpected error occurred: {str(e)}")
             retry_count += 1
 
-        if retry_count >= MAX_RETRIES:
-            st.error(f"Failed to generate questions after {MAX_RETRIES} attempts. Please try again later.")
-            break
+    st.error(f"Failed to generate questions after {MAX_RETRIES} attempts.")
+    return cumulative_df, 0
+
+def generate_questions(params, api_key):
+    subjects, topics, selected_pdfs, keywords, question_types, num_questions, difficulty_levels, language, question_source, year_range = params
+
+    cumulative_df = pd.DataFrame()
+    total_questions = 0
+    dataframe_placeholder = st.empty()
+
+    # Adjust batch size based on total number of questions
+    if num_questions >= 500:
+        batch_size = 50
+    elif num_questions >= 100:
+        batch_size = 20
+    else:
+        batch_size = 5
+
+    # Prepare batches
+    batches = []
+    while total_questions < num_questions:
+        remaining_questions = min(num_questions - total_questions, batch_size)
+        batches.append(remaining_questions)
+        total_questions += remaining_questions
+
+    total_questions = 0  # Reset to count actual generated questions
+    progress_bar = st.progress(0)
+
+    # Use ThreadPoolExecutor for parallel execution
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        futures = []
+        for batch_size in batches:
+            futures.append(executor.submit(generate_questions_batch, params, api_key, batch_size, cumulative_df.copy(), language))
+
+        for future in concurrent.futures.as_completed(futures):
+            cumulative_df, new_questions = future.result()
+            total_questions = len(cumulative_df)
+            # Update the displayed dataframe
+            dataframe_placeholder.dataframe(cumulative_df)
+            # Update progress bar
+            progress = min(total_questions / num_questions, 1.0)
+            progress_bar.progress(progress)
+            st.success(f"Total questions generated: {total_questions}/{num_questions}")
+
+            if total_questions >= num_questions:
+                break
 
     return cumulative_df
 
