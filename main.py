@@ -6,6 +6,7 @@ import streamlit as st
 import tiktoken
 from subject_data import SUBJECTS, TOPICS, PDF_NAMES
 import csv
+import random
 
 # Constants
 ASSISTANT_ID = "asst_WejSQNw2pN2DRnUOXpU3vMeX"
@@ -29,7 +30,6 @@ QUOTES = [
     "In the world of UPSC, consistency is the true key to success.",
     "Challenge your limits, expand your knowledge, achieve your dreams."
 ]
-
 
 # CSS Styling
 CSS = """
@@ -68,7 +68,6 @@ CSS = """
 </style>
 """
 
-# Function to validate API Key
 def validate_api_key(api_key):
     try:
         client = openai.OpenAI(api_key=api_key)
@@ -78,19 +77,16 @@ def validate_api_key(api_key):
         st.error("Invalid API key")
         return False
 
-# Function to count tokens using tiktoken
 def count_tokens(text, model="gpt-4o"):
     encoding = tiktoken.encoding_for_model(model)
     return len(encoding.encode(text))
 
-# Function to chunk input data if needed
 def chunk_input(text, max_tokens=MAX_COMPLETION_TOKENS):
     encoding = tiktoken.encoding_for_model("gpt-4o")
     tokens = encoding.encode(text)
     chunks = [tokens[i:i+max_tokens] for i in range(0, len(tokens), max_tokens)]
     return [encoding.decode(chunk) for chunk in chunks]
 
-# Sidebar for input parameters
 def create_sidebar():
     st.sidebar.title("Question Generator")
 
@@ -124,23 +120,19 @@ def create_sidebar():
     return subjects, selected_pdfs, sub_topic, keywords, question_types, num_questions, difficulty_levels, language, question_source, year_range
 
 def process_csv_content(csv_content, language):
-    # Check if the content is not found in knowledge text
     if "Not found in knowledge text" in csv_content:
         return None
 
-    # Remove any text before the actual CSV data
     csv_start = csv_content.find("Subject,Topic,")
     if csv_start != -1:
         csv_content = csv_content[csv_start:]
 
-    # Read CSV content
     try:
         df = pd.read_csv(io.StringIO(csv_content))
     except pd.errors.ParserError:
         st.error("Error parsing CSV data. The assistant's response may not be in the correct format.")
         return None
     
-    # Ensure all expected columns are present
     expected_columns = [
         "Subject", "Topic", "Sub-Topic", "Question Type", "Question Text (English)", 
         "Option A (English)", "Option B (English)", "Option C (English)", "Option D (English)", 
@@ -152,7 +144,6 @@ def process_csv_content(csv_content, language):
         if col not in df.columns:
             df[col] = ""
     
-    # Filter columns based on language selection
     if language == "English":
         columns_to_show = [col for col in df.columns if "Hindi" not in col]
     else:  # Both
@@ -266,8 +257,12 @@ def generate_questions(params, api_key):
 
     return all_csv_content
 
+def get_random_quote():
+    return random.choice(QUOTES)
+
 def main():
     st.title("Drishti QueAI")
+    st.markdown(CSS, unsafe_allow_html=True)
     api_key = st.text_input("Enter your API Key:", type="password")
 
     if not api_key:
@@ -290,6 +285,7 @@ def main():
             progress_bar.progress(min(int((time.time() - start_time) / 3 * 100), 100))
             status_text.text(get_random_quote())
             time.sleep(0.1)  # Reduced sleep time for smoother updates
+
         csv_content = generate_questions(params, api_key)
         
         if csv_content:
@@ -309,6 +305,10 @@ def main():
                 st.error("Failed to process the generated questions. Please try again.")
         else:
             st.error("No questions were generated. Please try again.")
+
+        # Clear the progress bar and status text after completion
+        progress_bar.empty()
+        status_text.empty()
 
 if __name__ == "__main__":
     main()
