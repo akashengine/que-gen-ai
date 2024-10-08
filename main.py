@@ -292,10 +292,11 @@ Follow all the detailed steps provided previously to generate high-quality exam 
     return None
 
 def generate_questions_parallel(params, api_key, num_questions, language):
+    QUESTIONS_PER_BATCH = 10
     batches = []
     remaining_questions = num_questions
     while remaining_questions > 0:
-        batch_size = min(remaining_questions, MAX_QUESTIONS_PER_BATCH)
+        batch_size = min(remaining_questions, QUESTIONS_PER_BATCH)
         batches.append(batch_size)
         remaining_questions -= batch_size
 
@@ -322,7 +323,16 @@ def generate_questions_parallel(params, api_key, num_questions, language):
             except Exception as exc:
                 st.error(f"An error occurred while generating a batch of {batch_size} questions: {str(exc)}")
 
-    return '\n'.join(all_csv_content)
+    # Combine all CSV content
+    combined_csv_content = '\n'.join(all_csv_content)
+
+    # Remove duplicate headers
+    lines = combined_csv_content.split('\n')
+    header = lines[0]
+    data_lines = [line for line in lines[1:] if line.strip()]  # Remove empty lines
+    final_csv_content = header + '\n' + '\n'.join(data_lines)
+
+    return final_csv_content
 
 def main():
     st.title("Drishti QueAI")
@@ -349,50 +359,57 @@ def main():
     st.session_state.params = params
     num_questions = params[6]  # Extract num_questions from params
 
-    col1, col2 = st.columns(2)
+    if st.button("Generate Questions"):
+        with st.spinner("Generating questions..."):
+            try:
+                csv_content = generate_questions_parallel(params, api_key, num_questions, params[8])  # params[8] is language
+                if csv_content:
+                    st.session_state.csv_content = csv_content
+                    st.session_state.processed_df = None  # Reset processed dataframe
+                    st.success(f"Generated {num_questions} questions successfully.")
+                    
+                    # Display raw CSV content
+                    st.subheader("Generated CSV Content")
+                    st.text_area("Raw CSV", csv_content, height=200)
+                    
+                    # Provide option to download raw CSV
+                    st.download_button(
+                        label="Download Raw CSV",
+                        data=csv_content,
+                        file_name="raw_generated_questions.csv",
+                        mime="text/csv"
+                    )
+                else:
+                    st.error("No questions were generated. Please try again.")
+            except Exception as e:
+                st.error(f"An error occurred while generating questions: {str(e)}")
 
-    with col1:
-        if st.button("Generate Questions"):
-            with st.spinner("Generating questions..."):
-                try:
-                    csv_content = generate_questions_parallel(params, api_key, num_questions, params[8])  # params[8] is language
-                    if csv_content:
-                        st.session_state.csv_content = csv_content
-                        st.session_state.processed_df = None  # Reset processed dataframe
-                        st.success(f"Generated {num_questions} questions successfully.")
-                    else:
-                        st.error("No questions were generated. Please try again.")
-                except Exception as e:
-                    st.error(f"An error occurred while generating questions: {str(e)}")
-
-    with col2:
-        if st.session_state.csv_content and st.button("Process CSV"):
-            with st.spinner("Processing CSV..."):
-                try:
-                    df = process_csv_content(st.session_state.csv_content, st.session_state.params[8])  # params[8] is language
-                    if df is not None and not df.empty:
-                        st.session_state.processed_df = df
-                        st.success(f"Processed {len(df)} questions successfully.")
-                    else:
-                        st.error("Failed to process CSV content. Please check the format.")
-                except Exception as e:
-                    st.error(f"An error occurred while processing the CSV: {str(e)}")
-                    st.text("Error details:")
-                    st.exception(e)
-
-    # Display CSV content if available
-    if st.session_state.csv_content:
-        st.subheader("Generated CSV Content")
-        st.text_area("Raw CSV", st.session_state.csv_content, height=200)
-
-    # Display processed dataframe if available
-    if st.session_state.processed_df is not None:
-        st.subheader("Processed Questions")
-        st.dataframe(st.session_state.processed_df)
-        csv_data = st.session_state.processed_df.to_csv(index=False)
-        st.download_button(label="Download CSV", data=csv_data, file_name="generated_questions.csv", mime="text/csv")
-    elif st.session_state.csv_content:
-        st.info("Click 'Process CSV' to view the formatted questions and download options.")
+    if st.session_state.csv_content and st.button("Process CSV"):
+        with st.spinner("Processing CSV..."):
+            try:
+                df = process_csv_content(st.session_state.csv_content, st.session_state.params[8])  # params[8] is language
+                if df is not None and not df.empty:
+                    st.session_state.processed_df = df
+                    st.success(f"Processed {len(df)} questions successfully.")
+                    
+                    # Display processed dataframe
+                    st.subheader("Processed Questions")
+                    st.dataframe(df)
+                    
+                    # Provide option to download processed CSV
+                    csv_data = df.to_csv(index=False)
+                    st.download_button(
+                        label="Download Processed CSV",
+                        data=csv_data,
+                        file_name="processed_generated_questions.csv",
+                        mime="text/csv"
+                    )
+                else:
+                    st.error("Failed to process CSV content. Please check the format.")
+            except Exception as e:
+                st.error(f"An error occurred while processing the CSV: {str(e)}")
+                st.text("Error details:")
+                st.exception(e)
 
 if __name__ == "__main__":
     main()
