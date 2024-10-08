@@ -6,7 +6,6 @@ import random
 from openai import OpenAI
 from typing_extensions import override
 from openai import AssistantEventHandler
-
 # Constants
 ASSISTANT_ID = "asst_WejSQNw2pN2DRnUOXpU3vMeX"
 
@@ -94,7 +93,6 @@ class EventHandler(AssistantEventHandler):
             self.generated_rows.append(",".join(self.current_row))
         st.text_area("Final Output:", value="\n".join(self.generated_rows), height=400, key="final_output")
         st.experimental_rerun()
-
 def get_random_quote():
     return random.choice(QUOTES)
 
@@ -164,21 +162,15 @@ def generate_questions(params, api_key):
 
     event_handler = EventHandler()
 
-    run = client.beta.threads.runs.create(
+    with client.beta.threads.runs.create_and_stream(
         thread_id=thread.id,
         assistant_id=ASSISTANT_ID,
-        instructions="Stream the generated questions row by row."
-    )
-
-    with client.beta.threads.runs.stream(
-        thread_id=thread.id,
-        run_id=run.id,
-        event_handler=event_handler
+        instructions="Stream the generated questions row by row.",
+        event_handler=event_handler,
     ) as stream:
         stream.until_done()
 
     return event_handler.generated_rows
-
 def main():
     st.set_page_config(page_title="Drishti QueAI", page_icon="📚", layout="wide")
     
