@@ -7,8 +7,6 @@ import tiktoken
 from subject_data import SUBJECTS, TOPICS, PDF_NAMES
 import csv
 
-import concurrent.futures  # For threading
-
 # Constants
 ASSISTANT_ID = "asst_WejSQNw2pN2DRnUOXpU3vMeX"
 MAX_COMPLETION_TOKENS = 16384
@@ -188,9 +186,6 @@ def process_csv_content(csv_content, language):
 
     return df[columns_to_show]
 
-
-
-
 def generate_questions_batch(params, api_key, batch_size, language):
     client = openai.OpenAI(api_key=api_key)
     subjects, topics, sub_topic, selected_pdfs, keywords, question_types, num_questions, difficulty_levels, language_param, question_source, year_range = params
@@ -235,10 +230,9 @@ Follow all the detailed steps provided previously to generate high-quality exam 
 - If no relevant entry is found in the Knowledge Base, respond with: "Not found in knowledge text."
 """
 
-
     retry_count = 0
 
-   while retry_count < MAX_RETRIES:
+    while retry_count < MAX_RETRIES:
         try:
             thread = client.beta.threads.create()
             message = client.beta.threads.messages.create(
@@ -293,75 +287,6 @@ Follow all the detailed steps provided previously to generate high-quality exam 
 
     st.error(f"Failed to generate questions after {MAX_RETRIES} attempts.")
     return None
-
-# Handling parallel requests to the assistant API for faster output generation
-def generate_questions(params, api_key):
-    subjects, topics, sub_topic, selected_pdfs, keywords, question_types, num_questions, difficulty_levels, language, question_source, year_range = params
-
-    cumulative_df = pd.DataFrame()
-    total_questions = 0
-    dataframe_placeholder = st.empty()
-
-    # Adjust batch size based on total number of questions
-    if num_questions >= 500:
-        batch_size = 50
-    elif num_questions >= 100:
-        batch_size = 20
-    else:
-        batch_size = 5
-
-    progress_bar = st.progress(0)
-    status_placeholder = st.empty()
-
-    max_attempts = 10  # Maximum number of attempts to generate all questions
-    attempts = 0
-
-    # Prepare batches
-    batches = []
-    remaining_questions = num_questions
-    while remaining_questions > 0:
-        current_batch_size = min(remaining_questions, batch_size)
-        batches.append(current_batch_size)
-        remaining_questions -= current_batch_size
-
-    # Use ThreadPoolExecutor for parallel execution (up to 10 requests)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-        futures = []
-        for batch_size in batches:
-            future = executor.submit(generate_questions_batch, params, api_key, batch_size, language)
-            futures.append(future)
-
-        for future in concurrent.futures.as_completed(futures):
-            df = future.result()
-            if df is not None and not df.empty:
-                cumulative_df = pd.concat([cumulative_df, df], ignore_index=True)
-                cumulative_df.drop_duplicates(subset=['Question Text (English)', 'Question Text (Hindi)'], inplace=True)
-                total_questions = len(cumulative_df)
-                
-                # Update the displayed dataframe
-                dataframe_placeholder.dataframe(cumulative_df)
-                
-                # Update progress bar
-                progress = min(total_questions / num_questions, 1.0)
-                progress_bar.progress(progress)
-                
-                status_placeholder.success(f"Total questions generated: {total_questions}/{num_questions}")
-            else:
-                st.warning("A batch did not return any questions.")
-
-            if total_questions >= num_questions:
-                break
-
-            attempts += 1
-            if attempts >= max_attempts:
-                break
-
-    if total_questions < num_questions:
-        st.warning(f"Only {total_questions} unique questions could be generated out of the requested {num_questions}.")
-    else:
-        st.success(f"All {num_questions} questions generated successfully.")
-
-    return cumulative_df
 
 def main():
     st.title("Drishti QueAI")
