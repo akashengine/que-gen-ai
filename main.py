@@ -125,6 +125,7 @@ def process_csv_content(csv_content, language):
     processed_content = header_line + '\n' + '\n'.join(data_lines)
 
     try:
+        # Attempt to read the CSV content
         df = pd.read_csv(io.StringIO(processed_content), skipinitialspace=True, quotechar='"', escapechar='\\')
     except pd.errors.ParserError as e:
         st.error(f"Error parsing CSV data: {e}")
@@ -138,10 +139,10 @@ def process_csv_content(csv_content, language):
         "Difficulty Level", "Language", "Source PDF Name", "Source Page Number", "Original Question Number", "Year of Original Question"
     ]
 
-    # Check for missing columns
+    # Check for missing columns and log an error with missing column names
     missing_columns = [col for col in expected_columns if col not in df.columns]
     if missing_columns:
-        st.warning(f"Missing columns: {', '.join(missing_columns)}. Adding them with empty values.")
+        st.error(f"Missing columns in CSV: {', '.join(missing_columns)}")
         for col in missing_columns:
             df[col] = ""
 
@@ -186,6 +187,7 @@ def process_csv_content(csv_content, language):
         df = df.drop(invalid_rows.index)
 
     return df[columns_to_show]
+
 
 
 
