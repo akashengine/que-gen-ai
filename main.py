@@ -3,9 +3,13 @@ import pandas as pd
 import io
 import time
 import random
+import logging
 from openai import OpenAI, AssistantEventHandler
 from typing_extensions import override
 from subject_data import SUBJECTS, TOPICS, PDF_NAMES
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
 
 # Constants
 ASSISTANT_ID = "asst_WejSQNw2pN2DRnUOXpU3vMeX"
@@ -69,6 +73,7 @@ class EventHandler(AssistantEventHandler):
     @override
     def on_text_created(self, text) -> None:
         if text.strip():
+            logging.info(f"Text created: {text.strip()}")
             self.current_row.append(text.strip())
         if len(self.current_row) == 23:  # Number of columns in our CSV
             self.generated_rows.append(",".join(self.current_row))
@@ -125,6 +130,7 @@ def validate_api_key(api_key):
         client.models.list()
         return True
     except Exception as e:
+        logging.error(f"API key validation failed: {e}")
         return False
 
 
@@ -140,43 +146,47 @@ def generate_questions(params, api_key):
 
     thread = client.beta.threads.create()
 
-    message = client.beta.threads.messages.create(
-        thread_id=thread.id,
-        role="user",
-        content=f"""
-        Generate {num_questions} questions based on the following parameters:
-        • Subjects: {subjects_text}
-        • Topics: {topics_text}
-        • Sub-Topic: {sub_topic}
-        • Question Type(s): {question_types_text}
-        • Difficulty Level(s): {difficulty_levels_text}
-        • Language: {language}
-        • Question Source: {question_source}
-        • Year Range: {year_range[0]} to {year_range[1]}
-        • Reference Material: {pdf_text}
+    try:
+        message = client.beta.threads.messages.create(
+            thread_id=thread.id,
+            role="user",
+            content=f"""
+            Generate {num_questions} questions based on the following parameters:
+            • Subjects: {subjects_text}
+            • Topics: {topics_text}
+            • Sub-Topic: {sub_topic}
+            • Question Type(s): {question_types_text}
+            • Difficulty Level(s): {difficulty_levels_text}
+            • Language: {language}
+            • Question Source: {question_source}
+            • Year Range: {year_range[0]} to {year_range[1]}
+            • Reference Material: {pdf_text}
 
-        Instructions:
-        1. Use the specified PDFs as reference material.
-        2. For each question, use the actual question number and page number from the referenced PDF.
-        3. Ensure the year for each question falls within the specified range.
-        4. If the language is set to "Hindi", provide all text (questions, options, answers, explanations) in Hindi only.
-        5. If the language is set to "English", provide all text in English only.
-        6. If the language is set to "Both", provide all text in both English and Hindi.
-        7. Format the output as a CSV with the following headers:
-           Subject,Topic,Sub-Topic,Question Type,Question Text (English),Question Text (Hindi),Option A (English),Option B (English),Option C (English),Option D (English),Option A (Hindi),Option B (Hindi),Option C (Hindi),Option D (Hindi),Correct Answer (English),Correct Answer (Hindi),Explanation (English),Explanation (Hindi),Difficulty Level,Language,Source PDF Name,Source Page Number,Original Question Number,Year of Original Question
+            Instructions:
+            1. Use the specified PDFs as reference material.
+            2. For each question, use the actual question number and page number from the referenced PDF.
+            3. Ensure the year for each question falls within the specified range.
+            4. If the language is set to "Hindi", provide all text (questions, options, answers, explanations) in Hindi only.
+            5. If the language is set to "English", provide all text in English only.
+            6. If the language is set to "Both", provide all text in both English and Hindi.
+            7. Format the output as a CSV with the following headers:
+               Subject,Topic,Sub-Topic,Question Type,Question Text (English),Question Text (Hindi),Option A (English),Option B (English),Option C (English),Option D (English),Option A (Hindi),Option B (Hindi),Option C (Hindi),Option D (Hindi),Correct Answer (English),Correct Answer (Hindi),Explanation (English),Explanation (Hindi),Difficulty Level,Language,Source PDF Name,Source Page Number,Original Question Number,Year of Original Question
 
-        Important: Do not generate any text before or after the CSV content. The response should contain only the CSV data.
-        """
-    )
+            Important: Do not generate any text before or after the CSV content. The response should contain only the CSV data.
+            """
+        )
 
-    event_handler = EventHandler()
+        event_handler = EventHandler()
 
-    client.beta.threads.runs.create_and_stream(
-        thread_id=thread.id,
-        assistant_id=ASSISTANT_ID,
-        instructions="Streaming output row by row.",
-        event_handler=event_handler
-    )
+        client.beta.threads.runs.create_and_stream(
+            thread_id=thread.id,
+            assistant_id=ASSISTANT_ID,
+            instructions="Streaming output row by row.",
+            event_handler=event_handler
+        )
+    except Exception as e:
+        logging.error(f"Error during question generation: {e}")
+        st.error(f"An error occurred during question generation: {str(e)}")
 
 
 def main():
