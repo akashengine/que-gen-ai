@@ -275,7 +275,7 @@ Subject,Topic,Sub-Topic,Question Type,Question Text (English),Question Text (Hin
     st.error(f"Failed to generate questions after {MAX_RETRIES} attempts.")
     return None
 
-ef generate_questions(params, api_key):
+def generate_questions(params, api_key):
     subjects, topics, sub_topic, selected_pdfs, keywords, question_types, num_questions, difficulty_levels, language, question_source, year_range = params
 
     cumulative_df = pd.DataFrame()
