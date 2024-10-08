@@ -6,6 +6,7 @@ import streamlit as st
 import tiktoken
 from subject_data import SUBJECTS, TOPICS, PDF_NAMES
 import csv
+import concurrent.futures
 
 # Constants
 ASSISTANT_ID = "asst_WejSQNw2pN2DRnUOXpU3vMeX"
@@ -15,6 +16,8 @@ MAX_TOKENS = 128000
 MAX_RETRIES = 3
 POLLING_INTERVAL = 2  # seconds
 MAX_RUN_TIME = 600  # 10 minutes in seconds
+MAX_QUESTIONS_PER_BATCH = 20
+MAX_PARALLEL_REQUESTS = 5
 
 # CSS Styling
 CSS = """
@@ -288,6 +291,39 @@ Follow all the detailed steps provided previously to generate high-quality exam 
     st.error(f"Failed to generate questions after {MAX_RETRIES} attempts.")
     return None
 
+def generate_questions_parallel(params, api_key, num_questions, language):
+    batches = []
+    remaining_questions = num_questions
+    while remaining_questions > 0:
+        batch_size = min(remaining_questions, MAX_QUESTIONS_PER_BATCH)
+        batches.append(batch_size)
+        remaining_questions -= batch_size
+
+    all_csv_content = []
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_PARALLEL_REQUESTS) as executor:
+        future_to_batch = {executor.submit(generate_questions_batch, params, api_key, batch_size, language): batch_size for batch_size in batches}
+        completed_questions = 0
+
+        for future in concurrent.futures.as_completed(future_to_batch):
+            batch_size = future_to_batch[future]
+            try:
+                csv_content = future.result()
+                if csv_content:
+                    all_csv_content.append(csv_content)
+                    completed_questions += batch_size
+                    progress = completed_questions / num_questions
+                    progress_bar.progress(progress)
+                    status_text.text(f"Generated {completed_questions}/{num_questions} questions")
+                else:
+                    st.warning(f"Failed to generate a batch of {batch_size} questions.")
+            except Exception as exc:
+                st.error(f"An error occurred while generating a batch of {batch_size} questions: {str(exc)}")
+
+    return '\n'.join(all_csv_content)
+
 def main():
     st.title("Drishti QueAI")
     st.markdown(CSS, unsafe_allow_html=True)
@@ -319,11 +355,11 @@ def main():
         if st.button("Generate Questions"):
             with st.spinner("Generating questions..."):
                 try:
-                    csv_content = generate_questions_batch(params, api_key, num_questions, params[8])  # params[8] is language
+                    csv_content = generate_questions_parallel(params, api_key, num_questions, params[8])  # params[8] is language
                     if csv_content:
                         st.session_state.csv_content = csv_content
                         st.session_state.processed_df = None  # Reset processed dataframe
-                        st.success("Questions generated successfully.")
+                        st.success(f"Generated {num_questions} questions successfully.")
                     else:
                         st.error("No questions were generated. Please try again.")
                 except Exception as e:
