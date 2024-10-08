@@ -85,7 +85,7 @@ def create_sidebar():
     selected_pdfs = st.sidebar.multiselect("Select PDF(s)", list(set(pdf_options)))
     
     question_types = st.sidebar.multiselect("Question Type(s)", ["MCQ", "Fill in the Blanks", "Short Answer", "Descriptive/Essay", "Match the Following", "True/False"])
-    num_questions = st.sidebar.number_input("Number of Questions", min_value=1, max_value=50, value=5)
+    num_questions = st.sidebar.number_input("Number of Questions", min_value=1, max_value=250, value=5)
     difficulty_levels = st.sidebar.multiselect("Difficulty Level(s)", ["Easy", "Medium", "Hard"])
     language = st.sidebar.selectbox("Language", ["English", "Hindi", "Both"])
     question_source = st.sidebar.selectbox("Question Source", ["Rewrite existing", "Create new"])
