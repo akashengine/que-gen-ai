@@ -4,7 +4,7 @@ import io
 import time
 import random
 import logging
-from openai import OpenAI, AssistantEventHandler
+from openai import OpenAI
 from typing_extensions import override
 from subject_data import SUBJECTS, TOPICS, PDF_NAMES
 
@@ -64,30 +64,6 @@ CSS = """
 }
 </style>
 """
-
-class EventHandler(AssistantEventHandler):
-    def __init__(self):
-        self.generated_rows = []
-        self.current_row = []
-
-    @override
-    def on_text_created(self, text) -> None:
-        if text.strip():
-            logging.info(f"Text created: {text.strip()}")
-            self.current_row.append(text.strip())
-        if len(self.current_row) == 23:  # Number of columns in our CSV
-            self.generated_rows.append(",".join(self.current_row))
-            self.current_row = []
-            st.text_area("Generated Questions:", value="\n".join(self.generated_rows), height=400, key=f"generated_questions_{len(self.generated_rows)}")
-            st.experimental_rerun()
-
-    @override
-    def on_message_done(self, message) -> None:
-        if self.current_row:
-            self.generated_rows.append(",".join(self.current_row))
-        st.text_area("Final Output:", value="\n".join(self.generated_rows), height=400, key="final_output")
-        st.experimental_rerun()
-
 
 def get_random_quote():
     return random.choice(QUOTES)
@@ -176,14 +152,15 @@ def generate_questions(params, api_key):
             """
         )
 
-        event_handler = EventHandler()
+        # Retrieve and display the generated questions row by row
+        response = client.beta.threads.runs.create(thread_id=thread.id, assistant_id=ASSISTANT_ID)
+        generated_rows = response.content.split('\n')
 
-        client.beta.threads.runs.create_and_stream(
-            thread_id=thread.id,
-            assistant_id=ASSISTANT_ID,
-            instructions="Streaming output row by row.",
-            event_handler=event_handler
-        )
+        for row in generated_rows:
+            if row.strip():
+                st.text_area("Generated Questions:", value=row, height=100, key=f"generated_questions_{len(row)}")
+                time.sleep(0.5)  # Add a small delay to simulate streaming output
+
     except Exception as e:
         logging.error(f"Error during question generation: {e}")
         st.error(f"An error occurred during question generation: {str(e)}")
