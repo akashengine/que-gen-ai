@@ -107,24 +107,6 @@ def create_sidebar():
 
     return subjects, selected_pdfs, sub_topic, keywords, question_types, num_questions, difficulty_levels, language, question_source, year_range
 
-# Generate questions with continuous runs
-import openai
-import time
-import pandas as pd
-import io
-import streamlit as st
-import tiktoken
-from subject_data import SUBJECTS, TOPICS, PDF_NAMES
-
-# Constants
-ASSISTANT_ID = "asst_WejSQNw2pN2DRnUOXpU3vMeX"
-MAX_COMPLETION_TOKENS = 16384
-MODEL_NAME = "gpt-4o"
-MAX_TOKENS = 128000
-MAX_RETRIES = 3
-POLLING_INTERVAL = 2  # seconds
-MAX_RUN_TIME = 600  # 10 minutes in seconds
-
 def generate_questions(params, api_key):
     client = openai.OpenAI(api_key=api_key)
 
