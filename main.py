@@ -123,15 +123,6 @@ def process_csv_content(csv_content, language):
         st.error("CSV header is missing in the assistant's response.")
         return None
 
-    processed_content = header_line + '\n' + '\n'.join(data_lines)
-
-    try:
-        # Attempt to read the CSV content
-        df = pd.read_csv(io.StringIO(processed_content), skipinitialspace=True, quotechar='"', escapechar='\\')
-    except pd.errors.ParserError as e:
-        st.error(f"Error parsing CSV data: {e}")
-        return None
-
     expected_columns = [
         "Subject", "Topic", "Sub-Topic", "Question Type", "Question Text (English)", "Question Text (Hindi)",
         "Option A (English)", "Option B (English)", "Option C (English)", "Option D (English)",
@@ -140,24 +131,20 @@ def process_csv_content(csv_content, language):
         "Difficulty Level", "Language", "Source PDF Name", "Source Page Number", "Original Question Number", "Year of Original Question"
     ]
 
-    # Check for missing columns and log an error with missing column names
-    missing_columns = [col for col in expected_columns if col not in df.columns]
-    if missing_columns:
-        st.error(f"Missing columns in CSV: {', '.join(missing_columns)}")
-        for col in missing_columns:
-            df[col] = ""
+    # Process the CSV line by line
+    rows = []
+    for line in data_lines:
+        fields = line.split(',')
+        row_dict = {col: 'N/A' for col in expected_columns}
+        for i, field in enumerate(fields):
+            if i < len(expected_columns):
+                row_dict[expected_columns[i]] = field.strip()
+        rows.append(row_dict)
 
-    # Check for extra columns
-    extra_columns = [col for col in df.columns if col not in expected_columns]
-    if extra_columns:
-        st.warning(f"Extra columns found: {', '.join(extra_columns)}. These will be removed.")
-        df = df.drop(columns=extra_columns)
+    df = pd.DataFrame(rows)
 
-    # Reorder columns to match expected order
-    df = df.reindex(columns=expected_columns)
-
-    # Fill NaN values with empty strings
-    df = df.fillna("")
+    # Fill NaN values with 'N/A'
+    df = df.fillna('N/A')
 
     # Ensure numeric columns are of the correct type
     numeric_columns = ["Source Page Number", "Original Question Number", "Year of Original Question"]
@@ -179,13 +166,12 @@ def process_csv_content(csv_content, language):
 
     # Validate that each row has a question text and at least two options
     invalid_rows = df[
-        (df["Question Text (English)"].isna() & df["Question Text (Hindi)"].isna()) |
-        ((df["Option A (English)"].isna() & df["Option B (English)"].isna()) &
-         (df["Option A (Hindi)"].isna() & df["Option B (Hindi)"].isna()))
+        ((df["Question Text (English)"] == 'N/A') & (df["Question Text (Hindi)"] == 'N/A')) |
+        (((df["Option A (English)"] == 'N/A') & (df["Option B (English)"] == 'N/A')) &
+         ((df["Option A (Hindi)"] == 'N/A') & (df["Option B (Hindi)"] == 'N/A')))
     ]
     if not invalid_rows.empty:
-        st.warning(f"Found {len(invalid_rows)} rows with missing question text or insufficient options. These rows will be removed.")
-        df = df.drop(invalid_rows.index)
+        st.warning(f"Found {len(invalid_rows)} rows with missing question text or insufficient options. These rows will be kept but marked as potentially invalid.")
 
     return df[columns_to_show]
 
@@ -367,49 +353,51 @@ def main():
                     st.session_state.csv_content = csv_content
                     st.session_state.processed_df = None  # Reset processed dataframe
                     st.success(f"Generated {num_questions} questions successfully.")
-                    
-                    # Display raw CSV content
-                    st.subheader("Generated CSV Content")
-                    st.text_area("Raw CSV", csv_content, height=200)
-                    
-                    # Provide option to download raw CSV
-                    st.download_button(
-                        label="Download Raw CSV",
-                        data=csv_content,
-                        file_name="raw_generated_questions.csv",
-                        mime="text/csv"
-                    )
                 else:
                     st.error("No questions were generated. Please try again.")
             except Exception as e:
                 st.error(f"An error occurred while generating questions: {str(e)}")
 
-    if st.session_state.csv_content and st.button("Process CSV"):
-        with st.spinner("Processing CSV..."):
-            try:
-                df = process_csv_content(st.session_state.csv_content, st.session_state.params[8])  # params[8] is language
-                if df is not None and not df.empty:
-                    st.session_state.processed_df = df
-                    st.success(f"Processed {len(df)} questions successfully.")
-                    
-                    # Display processed dataframe
-                    st.subheader("Processed Questions")
-                    st.dataframe(df)
-                    
-                    # Provide option to download processed CSV
-                    csv_data = df.to_csv(index=False)
-                    st.download_button(
-                        label="Download Processed CSV",
-                        data=csv_data,
-                        file_name="processed_generated_questions.csv",
-                        mime="text/csv"
-                    )
-                else:
-                    st.error("Failed to process CSV content. Please check the format.")
-            except Exception as e:
-                st.error(f"An error occurred while processing the CSV: {str(e)}")
-                st.text("Error details:")
-                st.exception(e)
+    # Always display CSV content if available
+    if st.session_state.csv_content:
+        st.subheader("Generated CSV Content")
+        st.text_area("Raw CSV", st.session_state.csv_content, height=200)
+        
+        # Provide option to download raw CSV
+        st.download_button(
+            label="Download Raw CSV",
+            data=st.session_state.csv_content,
+            file_name="raw_generated_questions.csv",
+            mime="text/csv"
+        )
+
+        if st.button("Process CSV"):
+            with st.spinner("Processing CSV..."):
+                try:
+                    df = process_csv_content(st.session_state.csv_content, st.session_state.params[8])  # params[8] is language
+                    if df is not None and not df.empty:
+                        st.session_state.processed_df = df
+                        st.success(f"Processed {len(df)} questions successfully.")
+                        st.info(f"Columns in processed data: {', '.join(df.columns)}")
+                        st.info(f"Number of rows with all 'N/A' values: {df.eq('N/A').all(axis=1).sum()}")
+                    else:
+                        st.error("Failed to process CSV content. Please check the format.")
+                except Exception as e:
+                    st.error(f"An error occurred while processing the CSV: {str(e)}")
+                    st.text("Error details:")
+                    st.exception(e)
+
+    # Display processed dataframe if available
+    if st.session_state.processed_df is not None:
+        st.subheader("Processed Questions")
+        st.dataframe(st.session_state.processed_df)
+        csv_data = st.session_state.processed_df.to_csv(index=False)
+        st.download_button(
+            label="Download Processed CSV",
+            data=csv_data,
+            file_name="processed_generated_questions.csv",
+            mime="text/csv"
+        )
 
 if __name__ == "__main__":
     main()
