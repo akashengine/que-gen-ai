@@ -276,39 +276,33 @@ def generate_questions(params, api_key):
     else:
         batch_size = 5
 
-    # Prepare batches
-    batches = []
-    remaining_questions = num_questions
-    while remaining_questions > 0:
-        current_batch_size = min(remaining_questions, batch_size)
-        batches.append(current_batch_size)
-        remaining_questions -= current_batch_size
-
     progress_bar = st.progress(0)
+    status_placeholder = st.empty()
 
-    # Use ThreadPoolExecutor for parallel execution
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-        futures = []
-        for batch_size in batches:
-            futures.append(executor.submit(generate_questions_batch, params, api_key, batch_size, language))
+    while total_questions < num_questions:
+        current_batch_size = min(num_questions - total_questions, batch_size)
+        df = generate_questions_batch(params, api_key, current_batch_size, language)
+        
+        if df is not None and not df.empty:
+            cumulative_df = pd.concat([cumulative_df, df], ignore_index=True)
+            cumulative_df.drop_duplicates(subset=['Question Text (English)'], inplace=True)
+            total_questions = len(cumulative_df)
+            
+            # Update the displayed dataframe
+            dataframe_placeholder.dataframe(cumulative_df)
+            
+            # Update progress bar
+            progress = min(total_questions / num_questions, 1.0)
+            progress_bar.progress(progress)
+            
+            status_placeholder.success(f"Total questions generated: {total_questions}/{num_questions}")
+        else:
+            st.warning("A batch did not return any questions. Retrying...")
 
-        for future in concurrent.futures.as_completed(futures):
-            df = future.result()
-            if df is not None and not df.empty:
-                cumulative_df = pd.concat([cumulative_df, df], ignore_index=True)
-                cumulative_df.drop_duplicates(subset=['Question Text (English)'], inplace=True)
-                total_questions = len(cumulative_df)
-                # Update the displayed dataframe
-                dataframe_placeholder.dataframe(cumulative_df)
-                # Update progress bar
-                progress = min(total_questions / num_questions, 1.0)
-                progress_bar.progress(progress)
-                st.success(f"Total questions generated: {total_questions}/{num_questions}")
-            else:
-                st.warning("A batch did not return any questions.")
-
-            if total_questions >= num_questions:
-                break
+    if total_questions < num_questions:
+        st.warning(f"Only {total_questions} unique questions could be generated out of the requested {num_questions}.")
+    else:
+        st.success(f"All {num_questions} questions generated successfully.")
 
     return cumulative_df
 
@@ -328,10 +322,11 @@ def main():
     num_questions = params[5]  # Extract num_questions from params
 
     if st.sidebar.button("Generate Questions"):
-        cumulative_df = generate_questions(params, api_key)
+        with st.spinner("Generating questions..."):
+            cumulative_df = generate_questions(params, api_key)
 
         if cumulative_df is not None and not cumulative_df.empty:
-            st.success("All questions generated successfully.")
+            st.success(f"Generated {len(cumulative_df)} questions successfully.")
 
             csv_data = cumulative_df.to_csv(index=False)
             st.download_button(label="Download CSV", data=csv_data, file_name="generated_questions.csv", mime="text/csv")
